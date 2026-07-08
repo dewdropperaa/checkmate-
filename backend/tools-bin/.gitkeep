@@ -1,0 +1,2 @@
+# Placeholder directory for external security tool binaries.
+# Mount contents into the backend container at /opt/tools.

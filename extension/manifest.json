@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Sentinel Scan",
+  "version": "0.1.1",
+  "description": "Authorized web vulnerability scanning from the browser.",
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": [
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "https://localhost/*",
+    "http://*/*",
+    "https://*/*"
+  ],
+  "icons": {
+    "16": "logo.png",
+    "48": "logo.png",
+    "128": "logo.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Sentinel Scan",
+    "default_icon": "logo.png"
+  },
+  "options_page": "options.html",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  }
+}

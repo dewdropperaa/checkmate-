@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sentinel Scan Options</title>
+    <style>
+      body {
+        margin: 0;
+        background: #f8fafc;
+        color: #0f172a;
+        font-family: "Segoe UI", system-ui, sans-serif;
+      }
+      .container {
+        max-width: 780px;
+        margin: 0 auto;
+        padding: 24px 20px 40px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 1.4rem;
+      }
+      .subtle {
+        margin: 0 0 18px;
+        color: #475569;
+      }
+      .card {
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      label {
+        display: block;
+        margin: 0 0 6px;
+        font-size: 0.85rem;
+        color: #334155;
+      }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px solid #cbd5e1;
+        margin-bottom: 12px;
+      }
+      button {
+        border: none;
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .primary {
+        background: #1d4ed8;
+        color: #ffffff;
+      }
+      .danger {
+        background: #dc2626;
+        color: #ffffff;
+      }
+      .secondary {
+        background: #e2e8f0;
+        color: #0f172a;
+      }
+      #target-list {
+        list-style: none;
+        padding: 0;
+        margin: 10px 0 0;
+      }
+      #target-list li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 8px 10px;
+        margin-bottom: 8px;
+      }
+      #target-list code {
+        font-size: 0.86rem;
+      }
+      #status {
+        margin-top: 8px;
+        color: #334155;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .empty {
+        margin: 0;
+        color: #64748b;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="container">
+      <h1>Sentinel Scan Options</h1>
+      <p class="subtle">Configure backend access and authorized scan targets.</p>
+
+      <section class="card">
+        <h2>Backend</h2>
+        <label for="backend-url">Backend base URL</label>
+        <input id="backend-url" type="url" placeholder="http://localhost:8000" />
+        <label for="auth-token">Auth token</label>
+        <input id="auth-token" type="password" placeholder="Bearer token value" />
+        <button id="save-settings" class="primary" type="button">Save backend settings</button>
+      </section>
+
+      <section class="card">
+        <h2>Authorized Targets</h2>
+        <label for="new-target">Add domain (example.com)</label>
+        <div class="row">
+          <input id="new-target" type="text" placeholder="example.com" />
+          <button id="add-target" class="secondary" type="button">Add</button>
+        </div>
+        <ul id="target-list"></ul>
+        <p id="empty-state" class="empty" hidden>No authorized targets configured.</p>
+      </section>
+
+      <p id="status"></p>
+    </main>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

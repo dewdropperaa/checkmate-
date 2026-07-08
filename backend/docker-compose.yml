@@ -1,0 +1,62 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - ZAP_API_URL=http://zap:8080
+      - ZAP_API_KEY=${ZAP_API_KEY}
+    volumes:
+      # Placeholder mount for external security tool binaries (nmap, nuclei, etc.)
+      - ./tools-bin:/opt/tools:ro
+    depends_on:
+      - zap
+    restart: unless-stopped
+
+  # OWASP ZAP daemon for active scanning.
+  # ZAP runs in daemon mode and exposes its REST API on port 8080.
+  # Active scans require human approval before execution.
+  zap:
+    image: ghcr.io/zaproxy/zaproxy:stable
+    command:
+      - zap.sh
+      - -daemon
+      - -host
+      - "0.0.0.0"
+      - -port
+      - "8080"
+      - -config
+      - api.addrs.addr.name=.*
+      - -config
+      - api.addrs.addr.regex=true
+      - -config
+      - api.disablekey=false
+      - -config
+      - api.key=${ZAP_API_KEY}
+    ports:
+      - "8080:8080"
+    volumes:
+      - zap-data:/home/zap/.ZAP
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/JSON/core/view/version/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  # Placeholder service for tool binary distribution / updates (not yet implemented).
+  tools:
+    image: alpine:3.20
+    command: ["sh", "-c", "echo 'Tool binaries placeholder — mount to backend /opt/tools' && sleep infinity"]
+    volumes:
+      - ./tools-bin:/opt/tools
+    profiles:
+      - tools
+
+volumes:
+  zap-data:

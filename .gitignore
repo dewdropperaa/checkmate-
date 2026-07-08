@@ -1,0 +1,25 @@
+# Environment files with secrets
+.env
+backend/.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node / extension
+node_modules/
+extension/dist/
+
+# Checkpoint database (sqlite)
+backend/data/
+backend/reports/
+
+# OS
+.DS_Store
+Thumbs.db
