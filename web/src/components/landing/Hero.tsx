@@ -1,9 +1,11 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, type FormEvent } from "react";
 import { useTranslations } from "next-intl";
-import { Link } from "@/i18n/navigation";
+import { Link, useRouter } from "@/i18n/navigation";
+import { useAuth } from "@/contexts/AuthContext";
+import { setPendingTarget } from "@/lib/pendingTarget";
 import styles from "./landing.module.css";
 
 function useCountUp(target: number, duration = 2000, delay = 0) {
@@ -110,6 +112,22 @@ function StatCard({ value, label, suffix = "", delay = 0 }: { value: number; lab
 
 export function Hero() {
   const t = useTranslations("hero");
+  const router = useRouter();
+  const { currentUser } = useAuth();
+  const [url, setUrl] = useState("");
+
+  function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    const target = url.trim();
+    if (!target) return;
+    setPendingTarget(target);
+    const query = `?target=${encodeURIComponent(target)}`;
+    if (currentUser) {
+      router.push(`/dashboard${query}`);
+    } else {
+      router.push(`/signup${query}`);
+    }
+  }
 
   return (
     <section className={styles.hero} aria-labelledby="hero-heading">
@@ -130,14 +148,31 @@ export function Hero() {
           
           <p className={styles.heroTagline}>{t("tagline")}</p>
           
-          <div className={styles.ctaRow}>
-            <Link href="/signup" className={`btn btn-primary btn-large ${styles.heroCta}`}>
-              {t("ctaPrimary")}
-            </Link>
-            <Link href="#how" className={`btn btn-ghost ${styles.heroCtaSecondary}`}>
-              {t("ctaSecondary")}
-            </Link>
-          </div>
+          <form className={styles.heroScanForm} onSubmit={onSubmit}>
+            <label className={styles.visuallyHidden} htmlFor="hero-target">
+              {t("urlLabel")}
+            </label>
+            <input
+              id="hero-target"
+              className={styles.heroUrlInput}
+              type="text"
+              inputMode="url"
+              autoComplete="url"
+              value={url}
+              onChange={(event) => setUrl(event.target.value)}
+              placeholder={t("urlPlaceholder")}
+              required
+            />
+            <button
+              type="submit"
+              className={`btn btn-primary btn-large ${styles.heroCta}`}
+            >
+              {t("urlSubmit")}
+            </button>
+          </form>
+          <Link href="#how" className={styles.heroHowLink}>
+            {t("ctaSecondary")}
+          </Link>
 
           <div className={styles.heroStats}>
             <StatCard value={2847} label={t("stat1Label")} delay={500} />

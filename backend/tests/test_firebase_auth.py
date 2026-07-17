@@ -85,6 +85,7 @@ def test_auth_sync_creates_user_and_free_org(auth_client: TestClient):
     response = auth_client.post(
         "/auth/sync",
         headers={"Authorization": "Bearer valid-token"},
+        json={"terms_accepted": True, "terms_version": "2026-07-17"},
     )
     assert response.status_code == 200
     body = response.json()
@@ -96,20 +97,36 @@ def test_auth_sync_creates_user_and_free_org(auth_client: TestClient):
     assert user["max_targets"] == FREE_MAX_TARGETS
     assert user["scans_per_month"] == FREE_SCANS_PER_MONTH
     assert user["org_id"]
+    assert user["terms_accepted_at"]
+    assert user["terms_version"] == "2026-07-17"
 
     stored = get_user("firebase-uid-1")
     assert stored is not None
     assert stored.plan_id == FREE_PLAN_ID
+    assert stored.terms_version == "2026-07-17"
+
+
+def test_auth_sync_rejects_new_user_without_terms(auth_client: TestClient):
+    response = auth_client.post(
+        "/auth/sync",
+        headers={"Authorization": "Bearer valid-token"},
+        json={},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"]["error"] == "terms_required"
+    assert get_user("firebase-uid-1") is None
 
 
 def test_auth_sync_is_idempotent(auth_client: TestClient):
     first = auth_client.post(
         "/auth/sync",
         headers={"Authorization": "Bearer valid-token"},
+        json={"terms_accepted": True, "terms_version": "2026-07-17"},
     )
     second = auth_client.post(
         "/auth/sync",
         headers={"Authorization": "Bearer valid-token"},
+        json={},
     )
     assert first.json()["created"] is True
     assert second.json()["created"] is False
@@ -120,6 +137,7 @@ def test_google_sign_in_creates_backend_user(auth_client: TestClient):
     response = auth_client.post(
         "/auth/sync",
         headers={"Authorization": "Bearer google-token"},
+        json={"terms_accepted": True, "terms_version": "2026-07-17"},
     )
     assert response.status_code == 200
     body = response.json()
@@ -127,6 +145,7 @@ def test_google_sign_in_creates_backend_user(auth_client: TestClient):
     assert body["user"]["id"] == "google-uid-1"
     assert body["user"]["auth_provider"] == "google.com"
     assert body["user"]["plan_id"] == FREE_PLAN_ID
+    assert body["user"]["terms_version"] == "2026-07-17"
 
 
 def test_invalid_token_rejected(auth_client: TestClient):

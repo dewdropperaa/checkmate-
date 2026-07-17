@@ -20,6 +20,7 @@ import {
   signUpWithEmail as signUpWithEmailFn,
 } from "@/lib/auth/auth";
 import type { AuthResult } from "@/lib/auth/errors";
+import { takePendingTermsAcceptance } from "@/lib/terms";
 
 type AuthContextValue = {
   currentUser: User | null;
@@ -40,7 +41,13 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 async function syncProfile(user: User): Promise<BackendUser> {
   const idToken = await user.getIdToken();
-  const result = await syncBackendUser(idToken);
+  const pendingTerms = takePendingTermsAcceptance();
+  const result = await syncBackendUser(
+    idToken,
+    pendingTerms
+      ? { termsAccepted: true, termsVersion: pendingTerms.version }
+      : undefined,
+  );
   return result.user;
 }
 

@@ -1,4 +1,5 @@
-const DEFAULT_BACKEND_URL = "http://localhost:8000";
+const DEFAULT_BACKEND_URL = "http://127.0.0.1:8000";
+const DEFAULT_WEB_APP_URL = "http://localhost:3000";
 
 type ApiRequestPayload = {
   path: string;
@@ -16,22 +17,43 @@ type RuntimeMessage =
       payload: {
         backendBaseUrl?: string;
         authToken?: string;
+        webAppUrl?: string;
       };
+    }
+  | { type: "CLEAR_AUTH" }
+  | {
+      type: "OPEN_WEB_AUTH";
+      payload?: { mode?: "signin" | "signup" };
     };
 
-function normalizeBaseUrl(input?: string): string {
+type ExternalConnectMessage = {
+  type: "CHECKMATE_CONNECT";
+  authToken?: string;
+  backendBaseUrl?: string;
+};
+
+function normalizeBaseUrl(input?: string, fallback = DEFAULT_BACKEND_URL): string {
   const trimmed = (input ?? "").trim();
   if (!trimmed) {
-    return DEFAULT_BACKEND_URL;
+    return fallback;
   }
   return trimmed.replace(/\/+$/, "");
 }
 
-async function getSettings(): Promise<{ backendBaseUrl: string; authToken: string }> {
-  const stored = await chrome.storage.local.get(["backendBaseUrl", "authToken"]);
+async function getSettings(): Promise<{
+  backendBaseUrl: string;
+  authToken: string;
+  webAppUrl: string;
+}> {
+  const stored = await chrome.storage.local.get([
+    "backendBaseUrl",
+    "authToken",
+    "webAppUrl",
+  ]);
   return {
-    backendBaseUrl: normalizeBaseUrl(stored.backendBaseUrl),
+    backendBaseUrl: normalizeBaseUrl(stored.backendBaseUrl, DEFAULT_BACKEND_URL),
     authToken: typeof stored.authToken === "string" ? stored.authToken : "",
+    webAppUrl: normalizeBaseUrl(stored.webAppUrl, DEFAULT_WEB_APP_URL),
   };
 }
 
@@ -92,10 +114,42 @@ async function performApiRequest(
   };
 }
 
+async function openWebAuth(mode: "signin" | "signup" = "signin"): Promise<void> {
+  const { webAppUrl } = await getSettings();
+  const path = mode === "signup" ? "/en/signup" : "/en/signin";
+  const url = new URL(`${webAppUrl}${path}`);
+  url.searchParams.set("from", "extension");
+  url.searchParams.set("next", "/connect-extension");
+  url.searchParams.set("extensionId", chrome.runtime.id);
+  await chrome.tabs.create({ url: url.toString() });
+}
+
+async function applyExternalConnect(
+  message: ExternalConnectMessage,
+): Promise<{ ok: boolean; error?: string }> {
+  const authToken = (message.authToken ?? "").trim();
+  if (!authToken) {
+    return { ok: false, error: "missing_token" };
+  }
+  const backendBaseUrl = normalizeBaseUrl(
+    message.backendBaseUrl,
+    DEFAULT_BACKEND_URL,
+  );
+  await chrome.storage.local.set({ authToken, backendBaseUrl });
+  return { ok: true };
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
-  const stored = await chrome.storage.local.get(["backendBaseUrl"]);
+  const stored = await chrome.storage.local.get(["backendBaseUrl", "webAppUrl"]);
+  const updates: Record<string, string> = {};
   if (typeof stored.backendBaseUrl !== "string" || !stored.backendBaseUrl.trim()) {
-    await chrome.storage.local.set({ backendBaseUrl: DEFAULT_BACKEND_URL });
+    updates.backendBaseUrl = DEFAULT_BACKEND_URL;
+  }
+  if (typeof stored.webAppUrl !== "string" || !stored.webAppUrl.trim()) {
+    updates.webAppUrl = DEFAULT_WEB_APP_URL;
+  }
+  if (Object.keys(updates).length > 0) {
+    await chrome.storage.local.set(updates);
   }
 });
 
@@ -109,16 +163,44 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
 
   if (message?.type === "GET_SETTINGS") {
     getSettings()
-      .then((settings) => sendResponse({ ok: true, ...settings }))
+      .then((settings) =>
+        sendResponse({
+          ok: true,
+          ...settings,
+          connected: Boolean(settings.authToken),
+        }),
+      )
       .catch((err) => sendResponse({ ok: false, error: String(err) }));
     return true;
   }
 
   if (message?.type === "SAVE_SETTINGS") {
-    const backendBaseUrl = normalizeBaseUrl(message.payload.backendBaseUrl);
-    const authToken = (message.payload.authToken ?? "").trim();
+    const backendBaseUrl = normalizeBaseUrl(
+      message.payload.backendBaseUrl,
+      DEFAULT_BACKEND_URL,
+    );
+    const webAppUrl = normalizeBaseUrl(message.payload.webAppUrl, DEFAULT_WEB_APP_URL);
+    const updates: Record<string, string> = { backendBaseUrl, webAppUrl };
+    if (typeof message.payload.authToken === "string") {
+      updates.authToken = message.payload.authToken.trim();
+    }
     chrome.storage.local
-      .set({ backendBaseUrl, authToken })
+      .set(updates)
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ ok: false, error: String(err) }));
+    return true;
+  }
+
+  if (message?.type === "CLEAR_AUTH") {
+    chrome.storage.local
+      .remove(["authToken"])
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ ok: false, error: String(err) }));
+    return true;
+  }
+
+  if (message?.type === "OPEN_WEB_AUTH") {
+    openWebAuth(message.payload?.mode ?? "signin")
       .then(() => sendResponse({ ok: true }))
       .catch((err) => sendResponse({ ok: false, error: String(err) }));
     return true;
@@ -126,5 +208,18 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
 
   return false;
 });
+
+chrome.runtime.onMessageExternal.addListener(
+  (message: ExternalConnectMessage, _sender, sendResponse) => {
+    if (message?.type !== "CHECKMATE_CONNECT") {
+      sendResponse({ ok: false, error: "unknown_message" });
+      return false;
+    }
+    applyExternalConnect(message)
+      .then((result) => sendResponse(result))
+      .catch((err) => sendResponse({ ok: false, error: String(err) }));
+    return true;
+  },
+);
 
 export {};

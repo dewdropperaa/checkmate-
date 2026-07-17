@@ -1,8 +1,10 @@
 import { getTranslations, setRequestLocale } from "next-intl/server";
-import { Link } from "@/i18n/navigation";
 import { SiteFooter } from "@/components/landing/SiteFooter";
 import { SiteHeader } from "@/components/landing/SiteHeader";
-import styles from "@/components/landing/landing.module.css";
+import {
+  LegalDocument,
+  type LegalSection,
+} from "@/components/legal/LegalDocument";
 
 type Props = {
   params: Promise<{ locale: string }>;
@@ -12,18 +14,18 @@ export default async function TermsPage({ params }: Props) {
   const { locale } = await params;
   setRequestLocale(locale);
   const t = await getTranslations("legal");
+  const sections = t.raw("termsSections") as LegalSection[];
 
   return (
     <>
       <SiteHeader />
-      <main id="main" className={`container ${styles.stubPage}`}>
-        <h1>{t("termsTitle")}</h1>
-        <p>{t("placeholder")}</p>
-        <p>
-          <Link href="/" className="btn btn-secondary">
-            ← checkmate
-          </Link>
-        </p>
+      <main id="main" className="container">
+        <LegalDocument
+          title={t("termsTitle")}
+          lastUpdated={t("lastUpdated")}
+          sections={sections}
+          backLabel={t("backHome")}
+        />
       </main>
       <SiteFooter />
     </>

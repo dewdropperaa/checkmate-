@@ -3,7 +3,11 @@
 import { useEffect, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/contexts/AuthContext";
-import { useRouter } from "@/i18n/navigation";
+import { usePathname, useRouter } from "@/i18n/navigation";
+import {
+  isSafeNextPath,
+  readAuthRedirectFromSearch,
+} from "@/lib/authRedirect";
 import styles from "@/components/auth/auth.module.css";
 
 export const DASHBOARD_PATH = "/dashboard";
@@ -29,6 +33,7 @@ export function AuthGuard({
 }: Props) {
   const { currentUser, isLoading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const t = useTranslations("auth");
 
   const isAuthenticated = Boolean(currentUser);
@@ -41,12 +46,30 @@ export function AuthGuard({
     if (isLoading) return;
 
     if (mode === "protected" && !isAuthenticated) {
-      router.replace(SIGNIN_PATH);
+      const search =
+        typeof window !== "undefined" ? window.location.search : "";
+      const params = new URLSearchParams();
+      const fromPage = isSafeNextPath(pathname) ? pathname : null;
+      const { extensionId } = readAuthRedirectFromSearch(search);
+      if (fromPage && fromPage !== DASHBOARD_PATH) {
+        params.set("next", fromPage);
+      }
+      if (extensionId) {
+        params.set("extensionId", extensionId);
+        params.set("from", "extension");
+      } else if (fromPage === "/connect-extension") {
+        params.set("from", "extension");
+      }
+      const qs = params.toString();
+      router.replace(qs ? `${SIGNIN_PATH}?${qs}` : SIGNIN_PATH);
       return;
     }
 
     if (mode === "guest" && shouldRedirectGuest) {
-      router.replace(DASHBOARD_PATH);
+      const search =
+        typeof window !== "undefined" ? window.location.search : "";
+      const { next } = readAuthRedirectFromSearch(search);
+      router.replace(next);
     }
   }, [
     isLoading,
@@ -54,6 +77,7 @@ export function AuthGuard({
     isAuthenticated,
     shouldRedirectGuest,
     router,
+    pathname,
   ]);
 
   if (isLoading) {

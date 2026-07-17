@@ -299,6 +299,33 @@ class Settings(BaseSettings):
         description="Require Firebase ID tokens on protected scan routes",
     )
 
+    # Watch Agent — Resend email (free tier) + optional NVD API key for higher rate limits.
+    resend_api_key: str | None = Field(default=None, repr=False)
+    resend_from_email: str = Field(
+        default="Checkmate <onboarding@resend.dev>",
+        description="Verified Resend from address (use onboarding@resend.dev for sandbox)",
+    )
+    nvd_api_key: str | None = Field(
+        default=None,
+        repr=False,
+        description=(
+            "Optional NVD API key. Without a key: 5 req/30s; with a key: 50 req/30s."
+        ),
+    )
+    public_app_url: str = Field(
+        default="http://localhost:3000",
+        description="Public web app base URL used in Watch Agent email links",
+    )
+    dodo_webhook_secret: str | None = Field(
+        default=None,
+        repr=False,
+        description="Shared secret for Dodo Payments plan-change webhooks",
+    )
+    watch_scheduler_enabled: bool = Field(
+        default=True,
+        description="Start the APScheduler Watch Agent on API startup",
+    )
+
     # Tool reliability
     require_toolchain_at_startup: bool = Field(
         default=True,

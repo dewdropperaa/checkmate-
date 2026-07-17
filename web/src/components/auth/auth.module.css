@@ -184,6 +184,53 @@
   color: var(--accent-bright);
 }
 
+.termsRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+.termsCheckbox {
+  margin-top: 0.2rem;
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.termsCheckbox:disabled {
+  cursor: not-allowed;
+}
+
+.termsLabel {
+  margin: 0;
+  color: var(--fg-dim);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.termsLabel a {
+  color: var(--accent-bright);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.signInAgree {
+  margin: 0;
+  color: var(--fg-faint);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.signInAgree a {
+  color: var(--accent-bright);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .strength {
   display: flex;
   flex-direction: column;
@@ -220,7 +267,7 @@
 .spinner {
   width: 0.9rem;
   height: 0.9rem;
-  border: 2px solid rgba(61, 220, 132, 0.25);
+  border: 2px solid var(--accent-a25);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: auth-spin 0.7s linear infinite;

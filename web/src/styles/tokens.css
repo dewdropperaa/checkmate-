@@ -1,52 +1,170 @@
 /**
  * Checkmate design tokens — single source of truth for the web UI.
- * Values mirror extension/popup.html, extension/options.html, and
- * backend/core/pdf_design.py so brand stays consistent across surfaces.
+ * Apply via data-theme="dark" | "light" on <html> (resolved theme only).
+ * PDF reports stay dark-themed separately (backend/core/pdf_design.py).
  */
-:root {
-  /* Backgrounds */
-  --bg: #0a0d0b;
-  --panel: #0e1310;
-  --panel-alt: #0c1512;
-  --input-bg: #070a08;
 
-  /* Borders */
+:root {
+  /* Typography & layout (theme-independent) */
+  --mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Consolas,
+    "Liberation Mono", "SFMono-Regular", Menlo, monospace;
+  --max-width: 1200px;
+  --radius: 0;
+  --space-section: clamp(4rem, 10vw, 6rem);
+
+  /* Traffic-light titlebar dots (OS chrome — same in both themes) */
+  --dot-red: #ff5f56;
+  --dot-amber: #ffbd2e;
+  --dot-green: #27c93f;
+}
+
+/*
+ * Dark values live on :root as a pre-script fallback (avoids unstyled flash).
+ * The FOUC script immediately sets data-theme to the resolved preference.
+ */
+
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg-primary: #0a0d0b;
+  --bg-secondary: #0e1310;
+  --bg-tertiary: #0c1512;
+  --bg-input: #070a08;
+  --bg-header: rgba(10, 13, 11, 0.85);
+  --bg-input-hero: rgba(8, 14, 12, 0.65);
+  --bg-terminal: #0a0d0b;
+  --bg-elevated: rgba(255, 255, 255, 0.02);
+
   --border: #1c2b22;
   --border-bright: #2b4534;
 
-  /* Text */
-  --fg: #cbd8cf;
-  --fg-dim: #6e8478;
-  --fg-faint: #47594e;
+  --text-primary: #cbd8cf;
+  --text-secondary: #6e8478;
+  --text-faint: #47594e;
 
-  /* Brand accent */
   --accent: #3ddc84;
   --accent-bright: #7dffb0;
   --accent-ink: #06170e;
 
-  /* Semantic (extension UI severity) */
+  /* Accent alpha washes (derived from #3ddc84) */
+  --accent-a03: rgba(61, 220, 132, 0.03);
+  --accent-a05: rgba(61, 220, 132, 0.05);
+  --accent-a08: rgba(61, 220, 132, 0.08);
+  --accent-a10: rgba(61, 220, 132, 0.1);
+  --accent-a12: rgba(61, 220, 132, 0.12);
+  --accent-a15: rgba(61, 220, 132, 0.15);
+  --accent-a18: rgba(61, 220, 132, 0.18);
+  --accent-a20: rgba(61, 220, 132, 0.2);
+  --accent-a22: rgba(61, 220, 132, 0.22);
+  --accent-a25: rgba(61, 220, 132, 0.25);
+  --accent-a30: rgba(61, 220, 132, 0.3);
+  --accent-a35: rgba(61, 220, 132, 0.35);
+  --accent-a40: rgba(61, 220, 132, 0.4);
+  --accent-a50: rgba(61, 220, 132, 0.5);
+  --accent-a80: rgba(61, 220, 132, 0.8);
+
   --amber: #ffb454;
+  --amber-a05: rgba(255, 180, 84, 0.05);
   --red: #ff5d5d;
   --yellow: #e8d24d;
+  --sev-blue: #6bb3ff;
 
-  /* Traffic-light titlebar dots (extension) */
-  --dot-red: #ff5f56;
-  --dot-amber: #ffbd2e;
-  --dot-green: #27c93f;
+  --severity-critical: #ff5d5d;
+  --severity-high: #ff5d5d;
+  --severity-medium: #ffb454;
+  --severity-low: #e8d24d;
+  --severity-info: #6e8478;
 
-  /* PDF report severity (WCAG-oriented; used for how-it-works badges) */
+  /* PDF-aligned severity (how-it-works / report chrome) */
   --sev-critical: #b91c1c;
   --sev-high: #b45309;
   --sev-medium: #854d0e;
   --sev-low: #1d4ed8;
   --sev-info: #4b5563;
 
-  /* Typography — same stack as extension --mono */
-  --mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Consolas,
-    "Liberation Mono", "SFMono-Regular", Menlo, monospace;
+  --shadow-strong: rgba(0, 0, 0, 0.7);
+  --scanline: rgba(255, 255, 255, 0.024);
 
-  /* Layout */
-  --max-width: 1200px;
-  --radius: 0;
-  --space-section: clamp(4rem, 10vw, 6rem);
+  /* Legacy aliases */
+  --bg: var(--bg-primary);
+  --panel: var(--bg-secondary);
+  --panel-alt: var(--bg-tertiary);
+  --input-bg: var(--bg-input);
+  --fg: var(--text-primary);
+  --fg-dim: var(--text-secondary);
+  --fg-faint: var(--text-faint);
+}
+
+/* ─── Light (same brand, forest accent for AA contrast) ────────────────── */
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg-primary: #f4f6f4;
+  --bg-secondary: #eef1ee;
+  --bg-tertiary: #e6ebe7;
+  --bg-input: #ffffff;
+  --bg-header: rgba(244, 246, 244, 0.9);
+  --bg-input-hero: rgba(255, 255, 255, 0.85);
+  --bg-terminal: #0a0d0b;
+  --bg-elevated: rgba(0, 0, 0, 0.03);
+
+  --border: #c8d2cb;
+  --border-bright: #9aafa3;
+
+  --text-primary: #1a211c;
+  --text-secondary: #4a5c52;
+  --text-faint: #6e8478;
+
+  /* Deep emerald — ~5.8:1 on #f4f6f4 */
+  --accent: #0b6e4f;
+  --accent-bright: #065f46;
+  --accent-ink: #f4f6f4;
+
+  /* Accent alpha washes (derived from #0b6e4f) */
+  --accent-a03: rgba(11, 110, 79, 0.04);
+  --accent-a05: rgba(11, 110, 79, 0.06);
+  --accent-a08: rgba(11, 110, 79, 0.08);
+  --accent-a10: rgba(11, 110, 79, 0.1);
+  --accent-a12: rgba(11, 110, 79, 0.12);
+  --accent-a15: rgba(11, 110, 79, 0.15);
+  --accent-a18: rgba(11, 110, 79, 0.18);
+  --accent-a20: rgba(11, 110, 79, 0.2);
+  --accent-a22: rgba(11, 110, 79, 0.22);
+  --accent-a25: rgba(11, 110, 79, 0.25);
+  --accent-a30: rgba(11, 110, 79, 0.3);
+  --accent-a35: rgba(11, 110, 79, 0.35);
+  --accent-a40: rgba(11, 110, 79, 0.4);
+  --accent-a50: rgba(11, 110, 79, 0.5);
+  --accent-a80: rgba(11, 110, 79, 0.8);
+
+  --amber: #a16207;
+  --amber-a05: rgba(161, 98, 7, 0.08);
+  --red: #991b1b;
+  --yellow: #854d0e;
+  --sev-blue: #1e40af;
+
+  --severity-critical: #991b1b;
+  --severity-high: #9a3412;
+  --severity-medium: #854d0e;
+  --severity-low: #1e40af;
+  --severity-info: #374151;
+
+  --sev-critical: #991b1b;
+  --sev-high: #9a3412;
+  --sev-medium: #854d0e;
+  --sev-low: #1e40af;
+  --sev-info: #374151;
+
+  --shadow-strong: rgba(0, 0, 0, 0.18);
+  --scanline: rgba(0, 0, 0, 0.03);
+
+  --bg: var(--bg-primary);
+  --panel: var(--bg-secondary);
+  --panel-alt: var(--bg-tertiary);
+  --input-bg: var(--bg-input);
+  --fg: var(--text-primary);
+  --fg-dim: var(--text-secondary);
+  --fg-faint: var(--text-faint);
 }

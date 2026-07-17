@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "checkmate",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Authorized web vulnerability scanning from the browser.",
-  "permissions": ["activeTab", "storage"],
+  "permissions": ["activeTab", "storage", "tabs"],
   "host_permissions": [
     "http://localhost/*",
     "http://127.0.0.1/*",
@@ -11,6 +11,15 @@
     "http://*/*",
     "https://*/*"
   ],
+  "externally_connectable": {
+    "matches": [
+      "http://localhost:3000/*",
+      "http://127.0.0.1:3000/*",
+      "https://localhost:3000/*",
+      "https://checkmate.ma/*",
+      "https://*.checkmate.ma/*"
+    ]
+  },
   "icons": {
     "16": "logo.png",
     "48": "logo.png",

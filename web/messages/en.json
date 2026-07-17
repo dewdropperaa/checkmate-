@@ -17,7 +17,9 @@
     "headline": "Find vulnerabilities ",
     "headlineHighlight": "before hackers do.",
     "tagline": "Automated security scanning that finds misconfigurations, weak headers, exposed files, and more. Get AI-powered executive summaries and shareable PDF reports in minutes.",
-    "ctaPrimary": "Start scanning free",
+    "urlLabel": "Website URL",
+    "urlPlaceholder": "https://your-website.com",
+    "urlSubmit": "Scan free",
     "ctaSecondary": "See how it works",
     "stat1Label": "Scans completed",
     "stat2Label": "Vulns found",
@@ -214,6 +216,8 @@
     "forgotPassword": "Forgot password?",
     "continueWithGoogle": "Continue with Google",
     "or": "or",
+    "agreeToTerms": "I agree to the <terms>Terms of Use</terms> and <privacy>Privacy Policy</privacy>",
+    "signInAgree": "By continuing, you agree to our <terms>Terms of Use</terms> and <privacy>Privacy Policy</privacy>.",
     "noAccount": "No account yet?",
     "hasAccount": "Already have an account?",
     "goToSignUp": "Sign up",
@@ -236,6 +240,7 @@
       "weakPassword": "Use at least 8 characters with upper, lower, and a number.",
       "passwordRequired": "Enter your password.",
       "passwordMismatch": "Passwords do not match.",
+      "agreeRequired": "You must agree to the Terms of Use and Privacy Policy to create an account.",
       "wrongPassword": "Incorrect email or password.",
       "userNotFound": "Incorrect email or password.",
       "invalidEmail": "Enter a valid email address.",
@@ -253,9 +258,310 @@
       "generic": "Something went wrong. Please try again."
     }
   },
+  "connectExtension": {
+    "title": "Connect the Chrome extension",
+    "subtitle": "Link checkmate to your account so the extension can scan with your plan.",
+    "connectingTitle": "Connecting…",
+    "connectingBody": "Signing your extension into this account.",
+    "connectedTitle": "Extension connected",
+    "connectedBody": "You can close this tab and open the checkmate extension to start scanning.",
+    "manualTitle": "Finish connecting in the extension",
+    "manualBody": "We could not push the token automatically. Copy it below, open the extension Options page, and paste it into the connection token field.",
+    "tokenLabel": "Connection token",
+    "copyToken": "Copy token",
+    "copied": "Copied",
+    "errorTitle": "Could not connect",
+    "errorGeneric": "Something went wrong while connecting the extension.",
+    "backDashboard": "Back to dashboard"
+  },
+  "dashboard": {
+    "plan": "Plan",
+    "securityOverview": "Security overview",
+    "welcome": "Signed in as {email}",
+    "connectExtension": "Connect extension",
+    "accountSummary": "Account summary",
+    "sitesMonitored": "Sites monitored",
+    "scansThisMonth": "Scans this month",
+    "newScan": "New scan",
+    "newScanHelp": "Enter a site you own or have explicit permission to test.",
+    "usage": "{used} / {limit} scans used",
+    "targetLabel": "Target URL or domain",
+    "targetPlaceholder": "https://example.com",
+    "authorization": "I confirm I'm authorized to scan this site",
+    "authorizationHelp": "This confirmation is required before you can start.",
+    "startScan": "Start scan",
+    "starting": "Starting…",
+    "scanError": "Unable to start the scan.",
+    "statusError": "Unable to load scan details.",
+    "history": "Scan history",
+    "historyLoading": "Loading scans…",
+    "historyError": "Unable to load scan history.",
+    "emptyHistory": "No scans yet. Start your first scan above.",
+    "liveScan": "Live scan",
+    "awaitingApproval": "Waiting for your approval",
+    "approvalTitle": "Your decision is required",
+    "approvalHelp": "Passive checks are complete. Active tests can send intrusive requests to the target site. Only approve them when you have the necessary permission.",
+    "approveActiveTests": "Approve active tests",
+    "skipActiveTests": "Skip active tests",
+    "saving": "Saving…",
+    "approvalError": "Unable to save your decision.",
+    "view": "View",
+    "rescan": "Re-scan",
+    "report": "Scan report",
+    "downloadPdf": "Download PDF",
+    "reportLoading": "Loading report…",
+    "reportError": "Unable to load the PDF report.",
+    "reportUnavailable": "The PDF report is not ready yet.",
+    "columns": {
+      "target": "Site / domain",
+      "date": "Date",
+      "risk": "Risk",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "statuses": {
+      "pending": "Pending",
+      "running": "Running",
+      "detecting": "Detecting",
+      "scored": "Scoring",
+      "reported": "Reporting",
+      "awaiting_approval": "Approval required",
+      "completed": "Completed",
+      "failed": "Failed",
+      "rejected": "Rejected"
+    },
+    "quota": {
+      "target_limit": "Your plan's site limit has been reached.",
+      "scan_limit": "Your plan's monthly scan limit has been reached.",
+      "pricingLink": "View pricing"
+    },
+    "pagination": {
+      "label": "History pagination",
+      "previous": "Previous",
+      "next": "Next",
+      "page": "Page {page} / {total}"
+    },
+    "pipeline": {
+      "label": "Scan progress",
+      "recon": "Recon",
+      "passive_detection": "Passive detection",
+      "human_approval_gate": "Waiting for approval",
+      "active_detection": "Active detection",
+      "verification": "Verification",
+      "scoring": "Scoring",
+      "reporting": "Reporting"
+    }
+  },
   "legal": {
-    "termsTitle": "Terms of use",
-    "privacyTitle": "Privacy policy",
-    "placeholder": "Legal copy to be written before production launch."
+    "termsTitle": "Terms of Use",
+    "privacyTitle": "Privacy Policy",
+    "lastUpdated": "Last updated: July 17, 2026",
+    "backHome": "checkmate",
+    "termsSections": [
+      {
+        "title": "1. Agreement to these Terms",
+        "paragraphs": [
+          "These Terms of Use (\"Terms\") govern your access to and use of the checkmate website, dashboard, APIs, scanners, monitoring features, reports, and related services (collectively, the \"Service\"). The Service is operated by checkmate (\"checkmate\", \"we\", \"us\", or \"our\"). Contact: hello@checkmate.ma.",
+          "By creating an account, checking the acceptance box, signing in, or otherwise using the Service, you agree to these Terms and our Privacy Policy. If you do not agree, do not use the Service.",
+          "If you use the Service on behalf of a company or other entity, you represent that you have authority to bind that entity, and \"you\" includes that entity."
+        ]
+      },
+      {
+        "title": "2. Eligibility",
+        "paragraphs": [
+          "You must be at least 18 years old (or the age of majority in your jurisdiction) and legally able to enter a binding contract. You must provide accurate account information and keep it up to date."
+        ]
+      },
+      {
+        "title": "3. The Service",
+        "paragraphs": [
+          "checkmate provides automated and assisted security scanning, monitoring, vulnerability-related information, and reporting tools for websites and related assets that you designate.",
+          "The Service may include passive checks, active tests (which can send intrusive requests), monitoring jobs, CVE-related alerts, and PDF or on-screen reports. Features vary by plan and may change over time.",
+          "We do not guarantee that scans will find every vulnerability, that results are complete or error-free, or that the Service will be uninterrupted. Findings are informational only and are not legal, compliance, or professional security advice."
+        ]
+      },
+      {
+        "title": "4. Authorization to scan (critical)",
+        "paragraphs": [
+          "You may only scan, monitor, or test targets that you own or for which you have explicit, written authorization from the owner or an authorized agent. You are solely responsible for obtaining and retaining that authorization.",
+          "Before starting active tests, you must confirm authorization when prompted. Submitting a target, confirming authorization, or approving active tests constitutes your representation that you are legally permitted to test that target.",
+          "Unauthorized scanning, probing, or testing of systems you do not own or control may violate criminal and civil laws. checkmate may refuse, pause, or terminate scans or accounts when we reasonably believe authorization is missing or misuse is occurring. We may retain logs for security, abuse prevention, and legal compliance."
+        ]
+      },
+      {
+        "title": "5. Acceptable use",
+        "paragraphs": [
+          "You agree not to: (a) use the Service for any unlawful purpose; (b) scan targets without authorization; (c) attempt to disrupt, overload, or compromise the Service or other customers; (d) circumvent plan limits, authentication, or security controls; (e) reverse engineer the Service except where mandatory law allows; (f) resell or provide the Service to third parties without our written consent; (g) upload malware or harmful content; or (h) use results to attack, extort, or harm others.",
+          "We may suspend or terminate access immediately for violations or suspected abuse, without liability to you beyond any prepaid unused fees required by applicable law."
+        ]
+      },
+      {
+        "title": "6. Accounts and security",
+        "paragraphs": [
+          "You are responsible for safeguarding your credentials and for activity under your account. Notify us promptly at hello@checkmate.ma if you suspect unauthorized access. We may require email verification and may disable accounts that pose a security or legal risk."
+        ]
+      },
+      {
+        "title": "7. Plans, fees, and changes",
+        "paragraphs": [
+          "Free and paid plans, quotas, and features are described on our pricing pages and may change. Paid subscriptions renew according to the terms shown at purchase unless cancelled. Taxes may apply. Except where mandatory law requires otherwise, fees are non-refundable once a billing period has started.",
+          "We may modify or discontinue features with reasonable notice when practicable. Continued use after changes take effect constitutes acceptance of the updated Terms when we post a new version."
+        ]
+      },
+      {
+        "title": "8. Intellectual property",
+        "paragraphs": [
+          "The Service, including software, branding, UI, and documentation, is owned by checkmate or its licensors. We grant you a limited, non-exclusive, non-transferable right to use the Service for your internal business or personal security assessment purposes under these Terms.",
+          "You retain rights in content you submit (such as target URLs). You grant us a license to process that content solely to operate, secure, improve, and provide the Service, and as described in the Privacy Policy."
+        ]
+      },
+      {
+        "title": "9. Third-party services",
+        "paragraphs": [
+          "The Service may rely on third parties (for example authentication providers, hosting, email, or vulnerability data sources). Their terms and privacy practices apply to their services. We are not responsible for third-party outages or data beyond our reasonable control."
+        ]
+      },
+      {
+        "title": "10. Disclaimer of warranties",
+        "paragraphs": [
+          "TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SERVICE IS PROVIDED \"AS IS\" AND \"AS AVAILABLE\" WITHOUT WARRANTIES OF ANY KIND, WHETHER EXPRESS, IMPLIED, OR STATUTORY, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT.",
+          "We do not warrant that scans will detect all issues, that reports are accurate or complete, or that use of the Service will make any system secure or compliant."
+        ]
+      },
+      {
+        "title": "11. Limitation of liability",
+        "paragraphs": [
+          "TO THE MAXIMUM EXTENT PERMITTED BY LAW, CHECKMATE AND ITS SUPPLIERS WILL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, OR ANY LOSS OF PROFITS, REVENUE, DATA, GOODWILL, OR BUSINESS INTERRUPTION, ARISING FROM OR RELATED TO THE SERVICE OR THESE TERMS, WHETHER BASED ON CONTRACT, TORT, OR ANY OTHER THEORY, EVEN IF ADVISED OF THE POSSIBILITY.",
+          "TO THE MAXIMUM EXTENT PERMITTED BY LAW, OUR TOTAL LIABILITY FOR ALL CLAIMS RELATING TO THE SERVICE OR THESE TERMS WILL NOT EXCEED THE GREATER OF (A) THE AMOUNTS YOU PAID US FOR THE SERVICE IN THE TWELVE (12) MONTHS BEFORE THE CLAIM OR (B) FIFTY EURO (€50).",
+          "Some jurisdictions do not allow certain limitations; in those cases, our liability is limited to the fullest extent permitted by law. Nothing in these Terms excludes liability that cannot be excluded under applicable law (including for fraud or willful misconduct)."
+        ]
+      },
+      {
+        "title": "12. Indemnification",
+        "paragraphs": [
+          "You will defend, indemnify, and hold harmless checkmate and its officers, directors, employees, and agents from and against any claims, damages, losses, liabilities, costs, and expenses (including reasonable attorneys' fees) arising out of or related to: (a) your use of the Service; (b) scanning or testing any target; (c) your lack of authorization or legal right to test a target; (d) your violation of these Terms or applicable law; or (e) content or instructions you provide."
+        ]
+      },
+      {
+        "title": "13. Suspension and termination",
+        "paragraphs": [
+          "You may stop using the Service at any time. We may suspend or terminate access if you breach these Terms, if required by law, or if continued provision creates legal, security, or operational risk. Upon termination, your right to use the Service ends. Sections that by nature should survive (including authorization, disclaimers, liability limits, and indemnity) will survive."
+        ]
+      },
+      {
+        "title": "14. Governing law and disputes",
+        "paragraphs": [
+          "These Terms are governed by the laws of Morocco, without regard to conflict-of-law rules. Courts located in Morocco shall have exclusive jurisdiction over disputes arising from these Terms or the Service, subject to any mandatory consumer protections that apply in your country of residence.",
+          "Before filing a claim, you agree to contact us at hello@checkmate.ma and attempt in good faith to resolve the dispute informally within thirty (30) days."
+        ]
+      },
+      {
+        "title": "15. Changes to these Terms",
+        "paragraphs": [
+          "We may update these Terms from time to time. We will post the updated version with a new \"Last updated\" date. Material changes may also be communicated by email or in-product notice when reasonable. Continued use after the effective date constitutes acceptance of the updated Terms."
+        ]
+      },
+      {
+        "title": "16. Contact",
+        "paragraphs": [
+          "Questions about these Terms: hello@checkmate.ma."
+        ]
+      }
+    ],
+    "privacySections": [
+      {
+        "title": "1. Who we are",
+        "paragraphs": [
+          "This Privacy Policy explains how checkmate (\"checkmate\", \"we\", \"us\") collects, uses, and shares personal data when you use our website and Service. Contact: hello@checkmate.ma."
+        ]
+      },
+      {
+        "title": "2. Data we collect",
+        "paragraphs": [
+          "Account data: email address, display name, authentication provider identifiers, email verification status, and plan or organization details.",
+          "Usage and scan data: targets you submit, authorization confirmations, scan configurations, findings, reports, monitoring snapshots, timestamps, and related technical logs needed to run and secure the Service.",
+          "Technical data: IP address, browser/device information, approximate location derived from IP, cookies or similar technologies, and diagnostic logs.",
+          "Communications: messages you send us (for example support emails)."
+        ]
+      },
+      {
+        "title": "3. How we use data",
+        "paragraphs": [
+          "We use personal data to: create and manage accounts; authenticate you; provide scanning, monitoring, alerting, and reporting; enforce authorization and acceptable use; prevent abuse and fraud; improve and secure the Service; communicate service notices; process billing where applicable; and comply with law.",
+          "We do not sell your personal data."
+        ]
+      },
+      {
+        "title": "4. Legal bases (where applicable)",
+        "paragraphs": [
+          "Where required (for example under GDPR-style rules), we process data based on: contract performance (providing the Service); legitimate interests (security, product improvement, fraud prevention — balanced against your rights); consent (where we ask for it); and legal obligations."
+        ]
+      },
+      {
+        "title": "5. Sharing",
+        "paragraphs": [
+          "We may share data with: service providers who help us operate the Service (hosting, authentication such as Firebase, email delivery, analytics, payment processors) under appropriate agreements; professional advisors; authorities when required by law or to protect rights and safety; and a successor in connection with a merger, acquisition, or asset sale.",
+          "Scan targets and findings may be processed on infrastructure we control or that of our processors. Do not submit personal data in target fields unless necessary for the scan."
+        ]
+      },
+      {
+        "title": "6. International transfers",
+        "paragraphs": [
+          "Your data may be processed in countries other than your own, including where our providers operate. Where required, we use appropriate safeguards for cross-border transfers."
+        ]
+      },
+      {
+        "title": "7. Retention",
+        "paragraphs": [
+          "We retain account and scan-related data for as long as your account remains active and as needed to provide the Service, resolve disputes, enforce agreements, and meet legal, tax, and security requirements. We may delete or anonymize data when it is no longer needed."
+        ]
+      },
+      {
+        "title": "8. Security",
+        "paragraphs": [
+          "We implement technical and organizational measures designed to protect personal data. No method of transmission or storage is completely secure; you use the Service at your own risk regarding residual security risks."
+        ]
+      },
+      {
+        "title": "9. Your rights",
+        "paragraphs": [
+          "Depending on your location, you may have rights to access, correct, delete, restrict, or port your personal data, and to object to certain processing or withdraw consent. To exercise rights, email hello@checkmate.ma. You may also lodge a complaint with a supervisory authority where applicable.",
+          "You can update some account information in the product or via your authentication provider."
+        ]
+      },
+      {
+        "title": "10. Cookies",
+        "paragraphs": [
+          "We use necessary cookies or local storage for authentication, security, locale, and preferences (such as theme). We may use additional cookies for analytics if enabled; you can control cookies through your browser settings where possible."
+        ]
+      },
+      {
+        "title": "11. Children",
+        "paragraphs": [
+          "The Service is not directed to children under 18. We do not knowingly collect personal data from children. If you believe a child provided data, contact us and we will take appropriate steps."
+        ]
+      },
+      {
+        "title": "12. Changes",
+        "paragraphs": [
+          "We may update this Privacy Policy from time to time. We will post the revised version with an updated date. Continued use after changes become effective constitutes acceptance where permitted by law."
+        ]
+      },
+      {
+        "title": "13. Contact",
+        "paragraphs": [
+          "Privacy questions or requests: hello@checkmate.ma."
+        ]
+      }
+    ]
+  },
+  "theme": {
+    "toggleAria": "Theme: {mode}. Click to change.",
+    "toggleTitle": "Theme: {mode}",
+    "modes": {
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System"
+    }
   }
 }

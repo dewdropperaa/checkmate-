@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import styles from "./landing.module.css";
 
 export function SiteHeader() {
@@ -47,6 +48,7 @@ export function SiteHeader() {
             </ul>
           </nav>
           <div className={styles.navActions}>
+            <ThemeToggle compact />
             <div className={styles.langSwitch} aria-label={t("lang")}>
               <Link
                 href="/"

@@ -1,0 +1,485 @@
+.dashboard {
+  width: 100%;
+  padding: clamp(1.5rem, 4vw, 3rem) 0 5rem;
+}
+
+.dashboard h1 {
+  margin: 0;
+  color: var(--accent-bright);
+  font-size: clamp(1.7rem, 4vw, 2.25rem);
+}
+
+.topActions,
+.orgRow,
+.scanForm,
+.pagination,
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.topActions {
+  justify-content: flex-end;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 2rem;
+  margin-bottom: 1.5rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.25rem;
+  color: var(--accent);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.welcome {
+  margin: 0.4rem 0 0;
+  color: var(--fg-dim);
+  font-size: 0.8rem;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.stat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.stat span {
+  color: var(--fg-dim);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.stat strong {
+  color: var(--accent-bright);
+  font-size: 1.05rem;
+  text-transform: capitalize;
+}
+
+.planBadge,
+.statusBadge,
+.severity {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--border-bright);
+  color: var(--accent);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.panel {
+  margin-top: 1.25rem;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  border: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.panelHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.1rem;
+}
+
+.panelTitle {
+  margin: 0;
+  color: var(--fg);
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.panelDescription,
+.scanTarget {
+  margin: 0.35rem 0 0;
+  color: var(--fg-dim);
+  font-size: 0.8rem;
+}
+
+.scanTarget {
+  overflow-wrap: anywhere;
+  color: var(--accent-bright);
+}
+
+.usage {
+  flex: 0 0 auto;
+  color: var(--fg-dim);
+  font-size: 0.72rem;
+}
+
+.fieldLabel {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: var(--fg);
+  font-size: 0.78rem;
+}
+
+.input {
+  flex: 1 1 22rem;
+  min-width: 0;
+  padding: 0.72rem 0.85rem;
+  border: 1px solid var(--border-bright);
+  border-radius: 0;
+  background: var(--input-bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.authorization {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin-top: 0.85rem;
+  color: var(--fg-dim);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.formHint {
+  margin: 0.35rem 0 0 1.6rem;
+  color: var(--fg-faint);
+  font-size: 0.7rem;
+}
+
+.authorization input {
+  margin-top: 0.2rem;
+  accent-color: var(--accent);
+}
+
+.warning,
+.error {
+  margin: 0.85rem 0 0;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--amber);
+  color: var(--amber);
+  font-size: 0.8rem;
+}
+
+.error {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.warning a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.history {
+  margin-top: 2rem;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.table th,
+.table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.table th {
+  color: var(--fg-faint);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.table tr:last-child td {
+  border-bottom: 0;
+}
+
+.target {
+  max-width: 24rem;
+  overflow: hidden;
+  color: var(--fg);
+  text-overflow: ellipsis;
+}
+
+.severity[data-severity="critical"] {
+  border-color: var(--severity-critical);
+  color: var(--severity-critical);
+}
+
+.severity[data-severity="high"] {
+  border-color: var(--severity-high);
+  color: var(--severity-high);
+}
+
+.severity[data-severity="medium"] {
+  border-color: var(--severity-medium);
+  color: var(--severity-medium);
+}
+
+.severity[data-severity="low"] {
+  border-color: var(--severity-low);
+  color: var(--severity-low);
+}
+
+.severity[data-severity="info"] {
+  border-color: var(--severity-info);
+  color: var(--severity-info);
+}
+
+.empty,
+.loading {
+  margin: 0;
+  padding: 1.2rem;
+  border: 1px solid var(--border);
+  color: var(--fg-dim);
+  font-size: 0.85rem;
+}
+
+.progress {
+  display: grid;
+  grid-template-columns: repeat(13, auto);
+  align-items: center;
+  gap: 0;
+  overflow-x: auto;
+  padding: 0.8rem 0 0.3rem;
+  color: var(--fg-faint);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.progressStep {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.stepMarker {
+  display: inline-grid;
+  width: 1.45rem;
+  height: 1.45rem;
+  place-items: center;
+  border: 1px solid var(--border-bright);
+  border-radius: 50%;
+  font-size: 0.65rem;
+}
+
+.progressStep[data-state="active"] {
+  color: var(--accent-bright);
+}
+
+.progressStep[data-state="active"] .stepMarker {
+  border-color: var(--accent);
+  background: var(--accent-a12);
+  box-shadow: 0 0 12px var(--accent-a18);
+}
+
+.progressStep[data-state="complete"] {
+  color: var(--accent);
+}
+
+.progressLine {
+  width: clamp(0.7rem, 2vw, 1.6rem);
+  height: 1px;
+  margin-inline: 0.35rem;
+  background: var(--border-bright);
+}
+
+.reportActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.reportFrame {
+  width: 100%;
+  min-height: min(70vh, 52rem);
+  border: 1px solid var(--border-bright);
+  /* PDF reports are always dark-themed — do not follow app theme */
+  background: #0a0a0a;
+}
+
+.reportLoading,
+.reportEmpty {
+  margin: 0;
+  padding: 1.2rem;
+  border: 1px solid var(--border);
+  color: var(--fg-dim);
+  font-size: 0.85rem;
+}
+
+.approval {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--amber);
+  background: var(--amber-a05);
+}
+
+.approval strong {
+  color: var(--amber);
+  font-size: 0.85rem;
+}
+
+.approval p {
+  max-width: 46rem;
+  margin: 0.25rem 0 0;
+  color: var(--fg-dim);
+  font-size: 0.75rem;
+}
+
+.pagination {
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+  color: var(--fg-dim);
+  font-size: 0.75rem;
+}
+
+.smallButton {
+  padding: 0.25rem 0.45rem;
+  font-size: 0.68rem;
+}
+
+.smallButton:disabled,
+.scanForm button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.avatar {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 1px solid var(--border-bright);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--accent);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.cornerControls {
+  position: fixed;
+  bottom: 1rem;
+  left: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  z-index: 50;
+}
+
+@media (max-width: 640px) {
+  .header,
+  .panelHeading,
+  .approval {
+    flex-direction: column;
+  }
+
+  .topActions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .stats {
+    grid-template-columns: 1fr;
+  }
+
+  .scanForm {
+    align-items: stretch;
+  }
+
+  .scanForm button {
+    width: 100%;
+  }
+
+  .tableWrap {
+    overflow: visible;
+    border: 0;
+  }
+
+  .table,
+  .table tbody,
+  .table tr,
+  .table td {
+    display: block;
+    width: 100%;
+  }
+
+  .table thead {
+    display: none;
+  }
+
+  .table tr {
+    margin-bottom: 0.75rem;
+    border: 1px solid var(--border);
+    background: var(--panel);
+  }
+
+  .table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    white-space: normal;
+  }
+
+  .table td::before {
+    content: attr(data-label);
+    color: var(--fg-faint);
+    font-size: 0.65rem;
+    text-transform: uppercase;
+  }
+
+  .table td[colspan] {
+    display: block;
+  }
+
+  .table td[colspan]::before {
+    content: none;
+  }
+
+  .target {
+    max-width: none;
+  }
+
+  .rowActions {
+    justify-content: flex-end;
+  }
+}

@@ -17,7 +17,9 @@
     "headline": "Détectez les failles ",
     "headlineHighlight": "avant les hackers.",
     "tagline": "Scan de sécurité automatisé qui détecte les mauvaises configurations, headers faibles, fichiers exposés et plus. Résumés IA et rapports PDF en quelques minutes.",
-    "ctaPrimary": "Commencer gratuitement",
+    "urlLabel": "URL du site",
+    "urlPlaceholder": "https://votre-site.com",
+    "urlSubmit": "Scanner gratuitement",
     "ctaSecondary": "Voir comment ça marche",
     "stat1Label": "Scans effectués",
     "stat2Label": "Vulnérabilités",
@@ -214,6 +216,8 @@
     "forgotPassword": "Mot de passe oublié ?",
     "continueWithGoogle": "Continuer avec Google",
     "or": "ou",
+    "agreeToTerms": "J'accepte les <terms>Conditions d'utilisation</terms> et la <privacy>Politique de confidentialité</privacy>",
+    "signInAgree": "En continuant, vous acceptez nos <terms>Conditions d'utilisation</terms> et notre <privacy>Politique de confidentialité</privacy>.",
     "noAccount": "Pas encore de compte ?",
     "hasAccount": "Déjà un compte ?",
     "goToSignUp": "S'inscrire",
@@ -236,6 +240,7 @@
       "weakPassword": "Utilisez au moins 8 caractères avec majuscule, minuscule et un chiffre.",
       "passwordRequired": "Saisissez votre mot de passe.",
       "passwordMismatch": "Les mots de passe ne correspondent pas.",
+      "agreeRequired": "Vous devez accepter les Conditions d'utilisation et la Politique de confidentialité pour créer un compte.",
       "wrongPassword": "E-mail ou mot de passe incorrect.",
       "userNotFound": "E-mail ou mot de passe incorrect.",
       "invalidEmail": "Saisissez une adresse e-mail valide.",
@@ -253,9 +258,310 @@
       "generic": "Une erreur s'est produite. Veuillez réessayer."
     }
   },
+  "connectExtension": {
+    "title": "Connecter l'extension Chrome",
+    "subtitle": "Liez checkmate à votre compte pour que l'extension scanne avec votre plan.",
+    "connectingTitle": "Connexion…",
+    "connectingBody": "Connexion de l'extension à ce compte.",
+    "connectedTitle": "Extension connectée",
+    "connectedBody": "Vous pouvez fermer cet onglet et ouvrir l'extension checkmate pour scanner.",
+    "manualTitle": "Terminez la connexion dans l'extension",
+    "manualBody": "Nous n'avons pas pu envoyer le jeton automatiquement. Copiez-le ci-dessous, ouvrez les Options de l'extension, et collez-le dans le champ jeton de connexion.",
+    "tokenLabel": "Jeton de connexion",
+    "copyToken": "Copier le jeton",
+    "copied": "Copié",
+    "errorTitle": "Connexion impossible",
+    "errorGeneric": "Une erreur s'est produite lors de la connexion de l'extension.",
+    "backDashboard": "Retour au tableau de bord"
+  },
+  "dashboard": {
+    "plan": "Plan",
+    "securityOverview": "Vue d'ensemble sécurité",
+    "welcome": "Connecté en tant que {email}",
+    "connectExtension": "Connecter l'extension",
+    "accountSummary": "Résumé du compte",
+    "sitesMonitored": "Sites suivis",
+    "scansThisMonth": "Scans ce mois-ci",
+    "newScan": "Nouveau scan",
+    "newScanHelp": "Saisissez un site que vous possédez ou êtes explicitement autorisé à tester.",
+    "usage": "{used} / {limit} scans utilisés",
+    "targetLabel": "URL ou domaine cible",
+    "targetPlaceholder": "https://exemple.com",
+    "authorization": "Je confirme être autorisé à scanner ce site",
+    "authorizationHelp": "Cette confirmation est requise avant de démarrer.",
+    "startScan": "Lancer le scan",
+    "starting": "Démarrage…",
+    "scanError": "Impossible de lancer le scan.",
+    "statusError": "Impossible de charger les détails du scan.",
+    "history": "Historique des scans",
+    "historyLoading": "Chargement des scans…",
+    "historyError": "Impossible de charger l'historique.",
+    "emptyHistory": "Aucun scan pour le moment. Lancez votre premier scan ci-dessus.",
+    "liveScan": "Scan en direct",
+    "awaitingApproval": "En attente de votre approbation",
+    "approvalTitle": "Votre décision est requise",
+    "approvalHelp": "Les contrôles passifs sont terminés. Les tests actifs peuvent envoyer des requêtes intrusives au site cible. Autorisez-les uniquement si vous avez l'accord nécessaire.",
+    "approveActiveTests": "Autoriser les tests actifs",
+    "skipActiveTests": "Ignorer les tests actifs",
+    "saving": "Enregistrement…",
+    "approvalError": "Impossible d'enregistrer votre décision.",
+    "view": "Voir",
+    "rescan": "Re-scanner",
+    "report": "Rapport de scan",
+    "downloadPdf": "Télécharger le PDF",
+    "reportLoading": "Chargement du rapport…",
+    "reportError": "Impossible de charger le rapport PDF.",
+    "reportUnavailable": "Le rapport PDF n'est pas encore prêt.",
+    "columns": {
+      "target": "Site / domaine",
+      "date": "Date",
+      "risk": "Risque",
+      "status": "Statut",
+      "actions": "Actions"
+    },
+    "statuses": {
+      "pending": "En attente",
+      "running": "En cours",
+      "detecting": "Détection",
+      "scored": "Évaluation",
+      "reported": "Rapport",
+      "awaiting_approval": "Approbation requise",
+      "completed": "Terminé",
+      "failed": "Échec",
+      "rejected": "Refusé"
+    },
+    "quota": {
+      "target_limit": "La limite de sites de votre plan est atteinte.",
+      "scan_limit": "La limite mensuelle de scans de votre plan est atteinte.",
+      "pricingLink": "Voir les tarifs"
+    },
+    "pagination": {
+      "label": "Pagination de l'historique",
+      "previous": "Précédent",
+      "next": "Suivant",
+      "page": "Page {page} / {total}"
+    },
+    "pipeline": {
+      "label": "Progression du scan",
+      "recon": "Recon",
+      "passive_detection": "Détection passive",
+      "human_approval_gate": "En attente d'approbation",
+      "active_detection": "Détection active",
+      "verification": "Vérification",
+      "scoring": "Évaluation",
+      "reporting": "Rapport"
+    }
+  },
   "legal": {
     "termsTitle": "Conditions d'utilisation",
     "privacyTitle": "Politique de confidentialité",
-    "placeholder": "Texte légal à rédiger avant le lancement en production."
+    "lastUpdated": "Dernière mise à jour : 17 juillet 2026",
+    "backHome": "checkmate",
+    "termsSections": [
+      {
+        "title": "1. Acceptation des présentes Conditions",
+        "paragraphs": [
+          "Les présentes Conditions d'utilisation (\"Conditions\") régissent votre accès et votre utilisation du site checkmate, du tableau de bord, des API, des scanners, des fonctions de surveillance, des rapports et des services associés (ensemble, le \"Service\"). Le Service est exploité par checkmate (\"checkmate\", \"nous\"). Contact : hello@checkmate.ma.",
+          "En créant un compte, en cochant la case d'acceptation, en vous connectant ou en utilisant autrement le Service, vous acceptez les présentes Conditions et notre Politique de confidentialité. Si vous n'êtes pas d'accord, n'utilisez pas le Service.",
+          "Si vous utilisez le Service pour le compte d'une société ou d'une autre entité, vous déclarez avoir le pouvoir de l'engager, et \"vous\" inclut cette entité."
+        ]
+      },
+      {
+        "title": "2. Éligibilité",
+        "paragraphs": [
+          "Vous devez avoir au moins 18 ans (ou l'âge de la majorité dans votre juridiction) et être juridiquement capable de conclure un contrat. Vous devez fournir des informations de compte exactes et les maintenir à jour."
+        ]
+      },
+      {
+        "title": "3. Le Service",
+        "paragraphs": [
+          "checkmate fournit des outils automatisés et assistés de scan de sécurité, de surveillance, d'informations liées aux vulnérabilités et de reporting pour les sites et actifs que vous désignez.",
+          "Le Service peut inclure des contrôles passifs, des tests actifs (pouvant envoyer des requêtes intrusives), des tâches de surveillance, des alertes liées aux CVE, et des rapports PDF ou à l'écran. Les fonctionnalités varient selon l'offre et peuvent évoluer.",
+          "Nous ne garantissons pas que les scans trouveront toutes les vulnérabilités, que les résultats sont complets ou sans erreur, ni que le Service sera ininterrompu. Les résultats sont purement informatifs et ne constituent pas un conseil juridique, de conformité ou de sécurité professionnelle."
+        ]
+      },
+      {
+        "title": "4. Autorisation de scanner (critique)",
+        "paragraphs": [
+          "Vous ne pouvez scanner, surveiller ou tester que des cibles dont vous êtes propriétaire ou pour lesquelles vous disposez d'une autorisation écrite explicite du propriétaire ou d'un mandataire habilité. Vous êtes seul responsable d'obtenir et de conserver cette autorisation.",
+          "Avant de lancer des tests actifs, vous devez confirmer l'autorisation lorsque cela vous est demandé. Soumettre une cible, confirmer l'autorisation ou approuver des tests actifs constitue votre déclaration selon laquelle vous êtes légalement autorisé à tester cette cible.",
+          "Le scan, le sondage ou le test non autorisé de systèmes que vous ne possédez pas ni ne contrôlez peut violer le droit pénal et civil. checkmate peut refuser, suspendre ou mettre fin aux scans ou aux comptes lorsque nous avons des raisons de croire que l'autorisation manque ou qu'un usage abusif a lieu. Nous pouvons conserver des journaux pour la sécurité, la prévention des abus et le respect de la loi."
+        ]
+      },
+      {
+        "title": "5. Usage acceptable",
+        "paragraphs": [
+          "Vous vous engagez à ne pas : (a) utiliser le Service à des fins illicites ; (b) scanner des cibles sans autorisation ; (c) tenter de perturber, surcharger ou compromettre le Service ou d'autres clients ; (d) contourner les plafonds d'offre, l'authentification ou les contrôles de sécurité ; (e) procéder à de l'ingénierie inverse du Service sauf lorsque la loi l'autorise de façon impérative ; (f) revendre ou fournir le Service à des tiers sans notre accord écrit ; (g) téléverser des malwares ou contenus nuisibles ; ou (h) utiliser les résultats pour attaquer, extorquer ou nuire à autrui.",
+          "Nous pouvons suspendre ou résilier l'accès immédiatement en cas de violation ou de suspicion d'abus, sans responsabilité envers vous au-delà de ce qu'exige éventuellement la loi pour des frais prépayés non utilisés."
+        ]
+      },
+      {
+        "title": "6. Comptes et sécurité",
+        "paragraphs": [
+          "Vous êtes responsable de la protection de vos identifiants et de l'activité sous votre compte. Informez-nous rapidement à hello@checkmate.ma en cas de suspicion d'accès non autorisé. Nous pouvons exiger une vérification e-mail et désactiver des comptes présentant un risque de sécurité ou juridique."
+        ]
+      },
+      {
+        "title": "7. Offres, tarifs et modifications",
+        "paragraphs": [
+          "Les offres gratuites et payantes, quotas et fonctionnalités sont décrits sur nos pages tarifaires et peuvent changer. Les abonnements payants se renouvellent selon les conditions affichées à l'achat sauf résiliation. Des taxes peuvent s'appliquer. Sauf obligation légale contraire, les frais ne sont pas remboursables une fois une période de facturation commencée.",
+          "Nous pouvons modifier ou interrompre des fonctionnalités avec un préavis raisonnable lorsque c'est praticable. L'usage continu après l'entrée en vigueur des changements vaut acceptation des Conditions mises à jour lorsque nous publions une nouvelle version."
+        ]
+      },
+      {
+        "title": "8. Propriété intellectuelle",
+        "paragraphs": [
+          "Le Service, y compris logiciels, marque, interface et documentation, appartient à checkmate ou à ses concédants. Nous vous accordons un droit limité, non exclusif et non transférable d'utiliser le Service pour vos besoins internes d'évaluation de sécurité, conformément aux présentes Conditions.",
+          "Vous conservez vos droits sur le contenu que vous soumettez (par ex. URL cibles). Vous nous accordez une licence pour traiter ce contenu uniquement afin d'exploiter, sécuriser, améliorer et fournir le Service, et comme décrit dans la Politique de confidentialité."
+        ]
+      },
+      {
+        "title": "9. Services tiers",
+        "paragraphs": [
+          "Le Service peut s'appuyer sur des tiers (par ex. authentification, hébergement, e-mail ou sources de données vulnérabilités). Leurs conditions et pratiques de confidentialité s'appliquent à leurs services. Nous ne sommes pas responsables des pannes ou données de tiers hors de notre contrôle raisonnable."
+        ]
+      },
+      {
+        "title": "10. Exclusion de garanties",
+        "paragraphs": [
+          "DANS LES LIMITES MAXIMALES PERMISES PAR LA LOI, LE SERVICE EST FOURNI « EN L'ÉTAT » ET « SELON DISPONIBILITÉ », SANS GARANTIE D'AUCUNE SORTE, EXPRESSE, IMPLICITE OU LÉGALE, Y COMPRIS DE QUALITÉ MARCHANDE, D'ADÉQUATION À UN USAGE PARTICULIER, DE TITRE ET DE NON-CONTREFAÇON.",
+          "Nous ne garantissons pas que les scans détecteront tous les problèmes, que les rapports sont exacts ou complets, ni que l'usage du Service rendra un système sûr ou conforme."
+        ]
+      },
+      {
+        "title": "11. Limitation de responsabilité",
+        "paragraphs": [
+          "DANS LES LIMITES MAXIMALES PERMISES PAR LA LOI, CHECKMATE ET SES FOURNISSEURS NE SERONT PAS RESPONSABLES DES DOMMAGES INDIRECTS, ACCESSOIRES, SPÉCIAUX, CONSÉCUTIFS, EXEMPLAIRES OU PUNITIFS, NI DE TOUTE PERTE DE BÉNÉFICES, DE CHIFFRE D'AFFAIRES, DE DONNÉES, DE CLIENTÈLE OU D'INTERRUPTION D'ACTIVITÉ, DÉCOULANT DU SERVICE OU DES PRÉSENTES CONDITIONS, QUE CE SOIT EN CONTRAT, DÉLIT OU AUTRE THÉORIE, MÊME INFORMÉS DE LA POSSIBILITÉ.",
+          "DANS LES LIMITES MAXIMALES PERMISES PAR LA LOI, NOTRE RESPONSABILITÉ TOTALE POUR TOUTES RÉCLAMATIONS LIÉES AU SERVICE OU AUX PRÉSENTES CONDITIONS NE DÉPASSERA PAS LE PLUS ÉLEVÉ ENTRE (A) LES MONTANTS QUE VOUS NOUS AVEZ PAYÉS POUR LE SERVICE AU COURS DES DOUZE (12) MOIS PRÉCÉDANT LA RÉCLAMATION OU (B) CINQUANTE EUROS (50 €).",
+          "Certaines juridictions n'autorisent pas certaines limitations ; dans ce cas, notre responsabilité est limitée dans toute la mesure permise par la loi. Rien dans les présentes n'exclut une responsabilité qui ne peut l'être (notamment fraude ou faute intentionnelle)."
+        ]
+      },
+      {
+        "title": "12. Indemnisation",
+        "paragraphs": [
+          "Vous défendrez, indemniserez et dégagerez de toute responsabilité checkmate ainsi que ses dirigeants, administrateurs, employés et agents contre toute réclamation, dommage, perte, responsabilité, coût et dépense (y compris honoraires d'avocat raisonnables) découlant de ou liés à : (a) votre usage du Service ; (b) le scan ou test de toute cible ; (c) votre absence d'autorisation ou de droit légal de tester une cible ; (d) votre violation des présentes Conditions ou de la loi applicable ; ou (e) le contenu ou les instructions que vous fournissez."
+        ]
+      },
+      {
+        "title": "13. Suspension et résiliation",
+        "paragraphs": [
+          "Vous pouvez cesser d'utiliser le Service à tout moment. Nous pouvons suspendre ou résilier l'accès en cas de violation des présentes Conditions, d'obligation légale, ou si la poursuite du service crée un risque juridique, de sécurité ou opérationnel. À la résiliation, votre droit d'utiliser le Service prend fin. Les clauses qui doivent survivre par nature (autorisation, exclusions, limitations de responsabilité, indemnisation) survivent."
+        ]
+      },
+      {
+        "title": "14. Droit applicable et litiges",
+        "paragraphs": [
+          "Les présentes Conditions sont régies par le droit marocain, sans égard aux règles de conflit de lois. Les tribunaux situés au Maroc ont compétence exclusive pour les litiges découlant des présentes Conditions ou du Service, sous réserve des protections impératives des consommateurs applicables dans votre pays de résidence.",
+          "Avant toute action, vous acceptez de nous contacter à hello@checkmate.ma et de tenter de bonne foi de résoudre le litige à l'amiable dans un délai de trente (30) jours."
+        ]
+      },
+      {
+        "title": "15. Modifications des Conditions",
+        "paragraphs": [
+          "Nous pouvons mettre à jour ces Conditions. Nous publierons la version mise à jour avec une nouvelle date de « Dernière mise à jour ». Des changements importants peuvent aussi être communiqués par e-mail ou dans le produit lorsque c'est raisonnable. L'usage continu après la date d'effet vaut acceptation des Conditions mises à jour."
+        ]
+      },
+      {
+        "title": "16. Contact",
+        "paragraphs": [
+          "Questions sur ces Conditions : hello@checkmate.ma."
+        ]
+      }
+    ],
+    "privacySections": [
+      {
+        "title": "1. Qui nous sommes",
+        "paragraphs": [
+          "La présente Politique de confidentialité explique comment checkmate (\"checkmate\", \"nous\") collecte, utilise et partage les données personnelles lorsque vous utilisez notre site et notre Service. Contact : hello@checkmate.ma."
+        ]
+      },
+      {
+        "title": "2. Données que nous collectons",
+        "paragraphs": [
+          "Données de compte : adresse e-mail, nom affiché, identifiants du fournisseur d'authentification, statut de vérification e-mail, et détails d'offre ou d'organisation.",
+          "Données d'usage et de scan : cibles soumises, confirmations d'autorisation, configurations de scan, résultats, rapports, instantanés de surveillance, horodatages et journaux techniques nécessaires à l'exploitation et à la sécurité du Service.",
+          "Données techniques : adresse IP, informations navigateur/appareil, localisation approximative dérivée de l'IP, cookies ou technologies similaires, et journaux de diagnostic.",
+          "Communications : messages que vous nous envoyez (par ex. support)."
+        ]
+      },
+      {
+        "title": "3. Comment nous utilisons les données",
+        "paragraphs": [
+          "Nous utilisons les données personnelles pour : créer et gérer les comptes ; vous authentifier ; fournir le scan, la surveillance, les alertes et les rapports ; faire respecter l'autorisation et l'usage acceptable ; prévenir les abus et la fraude ; améliorer et sécuriser le Service ; envoyer des avis de service ; traiter la facturation le cas échéant ; et respecter la loi.",
+          "Nous ne vendons pas vos données personnelles."
+        ]
+      },
+      {
+        "title": "4. Bases légales (le cas échéant)",
+        "paragraphs": [
+          "Lorsque la réglementation l'exige (par ex. type RGPD), nous traitons les données sur la base : de l'exécution du contrat (fourniture du Service) ; d'intérêts légitimes (sécurité, amélioration produit, prévention de la fraude — équilibrés avec vos droits) ; du consentement (lorsque nous le demandons) ; et d'obligations légales."
+        ]
+      },
+      {
+        "title": "5. Partage",
+        "paragraphs": [
+          "Nous pouvons partager des données avec : des prestataires qui nous aident à exploiter le Service (hébergement, authentification telle que Firebase, e-mail, analytique, paiements) sous accords appropriés ; des conseils professionnels ; des autorités lorsque la loi l'exige ou pour protéger droits et sécurité ; et un successeur dans le cadre d'une fusion, acquisition ou cession d'actifs.",
+          "Les cibles et résultats de scan peuvent être traités sur une infrastructure que nous contrôlons ou celle de nos sous-traitants. Ne soumettez pas de données personnelles dans les champs de cible sauf si cela est nécessaire au scan."
+        ]
+      },
+      {
+        "title": "6. Transferts internationaux",
+        "paragraphs": [
+          "Vos données peuvent être traitées dans des pays autres que le vôtre, y compris là où opèrent nos prestataires. Lorsque cela est requis, nous utilisons des garanties appropriées pour les transferts transfrontaliers."
+        ]
+      },
+      {
+        "title": "7. Conservation",
+        "paragraphs": [
+          "Nous conservons les données de compte et liées aux scans tant que votre compte est actif et aussi longtemps que nécessaire pour fournir le Service, résoudre des litiges, faire respecter les accords et répondre aux exigences légales, fiscales et de sécurité. Nous pouvons supprimer ou anonymiser les données lorsqu'elles ne sont plus nécessaires."
+        ]
+      },
+      {
+        "title": "8. Sécurité",
+        "paragraphs": [
+          "Nous mettons en œuvre des mesures techniques et organisationnelles destinées à protéger les données personnelles. Aucune méthode de transmission ou de stockage n'est totalement sûre ; vous utilisez le Service en acceptant les risques résiduels de sécurité."
+        ]
+      },
+      {
+        "title": "9. Vos droits",
+        "paragraphs": [
+          "Selon votre lieu de résidence, vous pouvez disposer de droits d'accès, de rectification, d'effacement, de limitation ou de portabilité de vos données, et d'opposition à certains traitements ou de retrait du consentement. Pour exercer vos droits, écrivez à hello@checkmate.ma. Vous pouvez aussi saisir une autorité de contrôle le cas échéant.",
+          "Vous pouvez mettre à jour certaines informations de compte dans le produit ou via votre fournisseur d'authentification."
+        ]
+      },
+      {
+        "title": "10. Cookies",
+        "paragraphs": [
+          "Nous utilisons des cookies nécessaires ou un stockage local pour l'authentification, la sécurité, la langue et les préférences (par ex. thème). Nous pouvons utiliser des cookies supplémentaires d'analytique s'ils sont activés ; vous pouvez contrôler les cookies via les paramètres de votre navigateur lorsque c'est possible."
+        ]
+      },
+      {
+        "title": "11. Enfants",
+        "paragraphs": [
+          "Le Service ne s'adresse pas aux personnes de moins de 18 ans. Nous ne collectons pas sciemment de données d'enfants. Si vous pensez qu'un enfant a fourni des données, contactez-nous et nous prendrons les mesures appropriées."
+        ]
+      },
+      {
+        "title": "12. Modifications",
+        "paragraphs": [
+          "Nous pouvons mettre à jour la présente Politique. Nous publierons la version révisée avec une date mise à jour. L'usage continu après l'entrée en vigueur vaut acceptation lorsque la loi le permet."
+        ]
+      },
+      {
+        "title": "13. Contact",
+        "paragraphs": [
+          "Questions ou demandes relatives à la confidentialité : hello@checkmate.ma."
+        ]
+      }
+    ]
+  },
+  "theme": {
+    "toggleAria": "Thème : {mode}. Cliquez pour changer.",
+    "toggleTitle": "Thème : {mode}",
+    "modes": {
+      "light": "Clair",
+      "dark": "Sombre",
+      "system": "Système"
+    }
   }
 }

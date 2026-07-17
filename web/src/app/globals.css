@@ -34,8 +34,8 @@ body::before {
   pointer-events: none;
   z-index: 0;
   background-image: repeating-linear-gradient(
-    rgba(255, 255, 255, 0.024) 0px,
-    rgba(255, 255, 255, 0.024) 1px,
+    var(--scanline) 0px,
+    var(--scanline) 1px,
     transparent 1px,
     transparent 3px
   );
@@ -51,13 +51,13 @@ body::after {
   background:
     radial-gradient(
       ellipse at 50% -10%,
-      rgba(61, 220, 132, 0.1),
+      var(--accent-a10),
       transparent 55%
     ),
     linear-gradient(
       120deg,
       transparent 40%,
-      rgba(61, 220, 132, 0.03) 50%,
+      var(--accent-a03) 50%,
       transparent 60%
     );
   background-size: 100% 100%, 220% 100%;
@@ -197,7 +197,7 @@ img {
   color: var(--accent-ink);
   border-color: var(--accent);
   transform: translateY(-1px);
-  box-shadow: 0 0 18px rgba(61, 220, 132, 0.22);
+  box-shadow: 0 0 18px var(--accent-a22);
 }
 
 .btn:active {
@@ -207,13 +207,13 @@ img {
 .btn-primary {
   border-color: var(--accent);
   color: var(--accent-bright);
-  background: rgba(61, 220, 132, 0.08);
+  background: var(--accent-a08);
 }
 
 .btn-primary:hover {
   background: var(--accent);
   color: var(--accent-ink);
-  box-shadow: 0 0 30px rgba(61, 220, 132, 0.35);
+  box-shadow: 0 0 30px var(--accent-a35);
 }
 
 .btn-secondary {

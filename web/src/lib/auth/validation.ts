@@ -9,6 +9,7 @@ export type FieldErrors = {
   email?: "invalidEmail";
   password?: "weakPassword" | "passwordRequired";
   confirmPassword?: "passwordMismatch";
+  terms?: "agreeRequired";
 };
 
 const EMAIL_RE =
@@ -79,6 +80,7 @@ export function validateSignUpFields(
   email: string,
   password: string,
   confirmPassword: string,
+  termsAccepted = false,
 ): FieldErrors {
   const errors: FieldErrors = {};
   if (!isValidEmail(email)) {
@@ -90,9 +92,17 @@ export function validateSignUpFields(
   if (password !== confirmPassword) {
     errors.confirmPassword = "passwordMismatch";
   }
+  if (!termsAccepted) {
+    errors.terms = "agreeRequired";
+  }
   return errors;
 }
 
 export function hasFieldErrors(errors: FieldErrors): boolean {
-  return Boolean(errors.email || errors.password || errors.confirmPassword);
+  return Boolean(
+    errors.email ||
+      errors.password ||
+      errors.confirmPassword ||
+      errors.terms,
+  );
 }

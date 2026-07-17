@@ -552,23 +552,36 @@
       </div>
       <p class="hint">scans run only through your self-hosted backend</p>
 
-      <p class="label">target</p>
-      <div id="current-url" class="url-box">loading...</div>
-
-      <button id="scan-btn" type="button" disabled>Scan this site</button>
-      <p id="scan-status" class="muted">detecting current site</p>
-
-      <div id="live-section" hidden>
-        <div class="live-flag">scan in progress</div>
-        <div class="row"><span>node</span><strong id="current-node">-</strong></div>
-        <div class="row"><span>findings</span><strong id="findings-count">0</strong></div>
+      <div id="auth-gate" hidden>
+        <p class="label">account required</p>
+        <p id="auth-gate-status" class="muted">
+          Sign in on the web app to connect this extension.
+        </p>
+        <button id="signin-btn" type="button">Sign in</button>
+        <button id="signup-btn" type="button" style="margin-top: 8px">
+          Create account
+        </button>
       </div>
 
-      <div id="summary-section" hidden>
-        <p class="label">findings by severity</p>
-        <ul id="severity-summary" class="severity-list"></ul>
-        <button id="report-btn" type="button" hidden>View full report</button>
-        <button id="download-pdf-btn" type="button" hidden>Download PDF</button>
+      <div id="scan-panel">
+        <p class="label">target</p>
+        <div id="current-url" class="url-box">loading...</div>
+
+        <button id="scan-btn" type="button" disabled>Scan this site</button>
+        <p id="scan-status" class="muted">detecting current site</p>
+
+        <div id="live-section" hidden>
+          <div class="live-flag">scan in progress</div>
+          <div class="row"><span>node</span><strong id="current-node">-</strong></div>
+          <div class="row"><span>findings</span><strong id="findings-count">0</strong></div>
+        </div>
+
+        <div id="summary-section" hidden>
+          <p class="label">findings by severity</p>
+          <ul id="severity-summary" class="severity-list"></ul>
+          <button id="report-btn" type="button" hidden>View full report</button>
+          <button id="download-pdf-btn" type="button" hidden>Download PDF</button>
+        </div>
       </div>
 
       <button id="open-options" type="button">options</button>

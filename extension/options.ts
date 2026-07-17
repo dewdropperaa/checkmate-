@@ -5,8 +5,21 @@ type ApiResponse<T = unknown> = {
 };
 
 const backendUrlInput = document.getElementById("backend-url") as HTMLInputElement;
+const webAppUrlInput = document.getElementById("webapp-url") as HTMLInputElement;
 const authTokenInput = document.getElementById("auth-token") as HTMLInputElement;
 const saveSettingsBtn = document.getElementById("save-settings") as HTMLButtonElement;
+const connectAccountBtn = document.getElementById(
+  "connect-account",
+) as HTMLButtonElement;
+const createAccountBtn = document.getElementById(
+  "create-account",
+) as HTMLButtonElement;
+const disconnectAccountBtn = document.getElementById(
+  "disconnect-account",
+) as HTMLButtonElement;
+const connectionStatusEl = document.getElementById(
+  "connection-status",
+) as HTMLParagraphElement;
 const newTargetInput = document.getElementById("new-target") as HTMLInputElement;
 const addTargetBtn = document.getElementById("add-target") as HTMLButtonElement;
 const targetListEl = document.getElementById("target-list") as HTMLUListElement;
@@ -101,12 +114,37 @@ async function updateTargetsOnBackend(updatedTargets: string[]): Promise<void> {
   throw new Error(`Failed to update /targets (${putResponse.status})`);
 }
 
-async function loadSettings(): Promise<void> {
-  const settings = await sendMessage<{ ok: boolean; backendBaseUrl?: string; authToken?: string }>({
+function renderConnectionStatus(connected: boolean): void {
+  connectionStatusEl.classList.toggle("empty", !connected);
+  if (connected) {
+    connectionStatusEl.textContent =
+      "Connected to your checkmate account. You can scan from the popup.";
+    connectAccountBtn.textContent = "Reconnect account";
+    disconnectAccountBtn.hidden = false;
+  } else {
+    connectionStatusEl.textContent =
+      "Not connected. Sign in on the web app, then return here.";
+    connectAccountBtn.textContent = "Sign in to connect";
+    disconnectAccountBtn.hidden = true;
+  }
+}
+
+async function loadSettings(): Promise<boolean> {
+  const settings = await sendMessage<{
+    ok: boolean;
+    backendBaseUrl?: string;
+    authToken?: string;
+    webAppUrl?: string;
+    connected?: boolean;
+  }>({
     type: "GET_SETTINGS",
   });
-  backendUrlInput.value = settings.backendBaseUrl ?? "http://localhost:8000";
+  backendUrlInput.value = settings.backendBaseUrl ?? "http://127.0.0.1:8000";
+  webAppUrlInput.value = settings.webAppUrl ?? "http://localhost:3000";
   authTokenInput.value = settings.authToken ?? "";
+  const connected = Boolean(settings.connected ?? settings.authToken);
+  renderConnectionStatus(connected);
+  return connected;
 }
 
 async function loadTargets(): Promise<void> {
@@ -130,16 +168,18 @@ async function loadTargets(): Promise<void> {
 }
 
 async function saveSettings(): Promise<void> {
-  const backendBaseUrl = backendUrlInput.value.trim() || "http://localhost:8000";
+  const backendBaseUrl = backendUrlInput.value.trim() || "http://127.0.0.1:8000";
+  const webAppUrl = webAppUrlInput.value.trim() || "http://localhost:3000";
   const authToken = authTokenInput.value.trim();
   const result = await sendMessage<{ ok: boolean; error?: string }>({
     type: "SAVE_SETTINGS",
-    payload: { backendBaseUrl, authToken },
+    payload: { backendBaseUrl, authToken, webAppUrl },
   });
 
   if (!result.ok) {
     throw new Error(result.error ?? "Failed to save settings");
   }
+  renderConnectionStatus(Boolean(authToken));
 }
 
 async function addTarget(): Promise<void> {
@@ -174,11 +214,38 @@ saveSettingsBtn.addEventListener("click", () => {
   void (async () => {
     try {
       await saveSettings();
-      setStatus("Backend settings saved.");
-      await loadTargets();
+      setStatus("Settings saved.");
+      if (authTokenInput.value.trim()) {
+        await loadTargets();
+      }
     } catch (error) {
       setStatus(String(error), true);
     }
+  })();
+});
+
+connectAccountBtn.addEventListener("click", () => {
+  void sendMessage({ type: "OPEN_WEB_AUTH", payload: { mode: "signin" } }).then(
+    () => {
+      setStatus("Complete sign-in in the browser tab, then reopen Options.");
+    },
+  );
+});
+
+createAccountBtn.addEventListener("click", () => {
+  void sendMessage({ type: "OPEN_WEB_AUTH", payload: { mode: "signup" } }).then(
+    () => {
+      setStatus("Create your account in the browser tab, then reopen Options.");
+    },
+  );
+});
+
+disconnectAccountBtn.addEventListener("click", () => {
+  void (async () => {
+    await sendMessage({ type: "CLEAR_AUTH" });
+    authTokenInput.value = "";
+    renderConnectionStatus(false);
+    setStatus("Disconnected. Sign in again to use the extension.");
   })();
 });
 
@@ -197,10 +264,27 @@ newTargetInput.addEventListener("keydown", (event) => {
   }
 });
 
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !changes.authToken) {
+    return;
+  }
+  const next = changes.authToken.newValue;
+  authTokenInput.value = typeof next === "string" ? next : "";
+  renderConnectionStatus(Boolean(next));
+  if (next) {
+    setStatus("Account connected.");
+    void loadTargets().catch(() => undefined);
+  }
+});
+
 void (async () => {
   try {
-    await loadSettings();
-    await loadTargets();
+    const connected = await loadSettings();
+    if (connected) {
+      await loadTargets();
+    } else {
+      setStatus("Sign in to connect before managing targets.");
+    }
   } catch (error) {
     setStatus(String(error), true);
   }

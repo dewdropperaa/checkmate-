@@ -103,6 +103,24 @@ Load the unpacked extension in Chrome:
 
 Ensure the backend is running at `http://localhost:8000` and that the active tab target appears in `AUTHORIZED_TARGETS`.
 
+## Web (Vercel)
+
+The Next.js app lives in `web/`. On Vercel:
+
+1. **Root Directory** must be `web` (Project Settings → General → Root Directory).
+2. Framework Preset: **Next.js**.
+3. Set these Environment Variables (from `web/.env.example`):
+   - `NEXT_PUBLIC_FIREBASE_*` (all required Firebase web keys)
+   - `NEXT_PUBLIC_API_BASE_URL` (public HTTPS URL of the FastAPI backend)
+
+A root `vercel.json` also targets `web/package.json` via `@vercel/next` if the Root Directory is left at the repository root.
+
+```bash
+cd web
+npm install
+npm run build
+```
+
 ## Project layout
 
 ```

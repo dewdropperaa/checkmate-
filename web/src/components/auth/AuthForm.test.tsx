@@ -105,6 +105,41 @@ describe("AuthForm validation", () => {
     expect(signUpWithEmail).not.toHaveBeenCalled();
   });
 
+  it("blocks signup without terms acceptance", async () => {
+    const user = userEvent.setup();
+    renderForm("signup");
+
+    await user.type(
+      screen.getByRole("textbox", { name: /^email$/i }),
+      "user@example.com",
+    );
+    await user.type(screen.getByLabelText(/^password$/i), "GoodPass1");
+    await user.type(
+      screen.getByLabelText(/confirm password/i),
+      "GoodPass1",
+    );
+    await user.click(screen.getByRole("button", { name: /create account/i }));
+
+    expect(
+      await screen.findByText(/must agree to the terms/i),
+    ).toBeInTheDocument();
+    expect(signUpWithEmail).not.toHaveBeenCalled();
+  });
+
+  it("blocks Google signup without terms acceptance", async () => {
+    const user = userEvent.setup();
+    renderForm("signup");
+
+    await user.click(
+      screen.getByRole("button", { name: /continue with google/i }),
+    );
+
+    expect(
+      await screen.findByText(/must agree to the terms/i),
+    ).toBeInTheDocument();
+    expect(signInWithGoogle).not.toHaveBeenCalled();
+  });
+
   it("redirects to dashboard after successful email sign-in", async () => {
     const user = userEvent.setup();
     signInWithEmail.mockResolvedValue({
@@ -169,6 +204,7 @@ describe("AuthForm validation", () => {
       screen.getByLabelText(/confirm password/i),
       "GoodPass1",
     );
+    await user.click(screen.getByRole("checkbox"));
     await user.click(screen.getByRole("button", { name: /create account/i }));
 
     expect(

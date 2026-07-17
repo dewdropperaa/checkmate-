@@ -7,6 +7,14 @@ import socket
 import pytest
 from fastapi.testclient import TestClient
 
+from core.accounts import (
+    configure_accounts_db,
+    create_scan_record,
+    init_accounts_schema,
+    upsert_user_from_firebase,
+)
+from core.firebase_auth import AuthenticatedUser
+
 
 @pytest.fixture
 def public_dns(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -85,3 +93,64 @@ def test_scan_idor_cross_client_denied_with_bearer_tokens(
     assert approve.status_code == 404
     report = client.get(f"/scan/{scan_id}/report", headers=attacker_headers)
     assert report.status_code == 404
+
+
+def test_scan_history_only_returns_authenticated_org_scans(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The history route derives its org from the verified token, not input."""
+    configure_accounts_db(tmp_path / "accounts.db")
+    init_accounts_schema()
+    try:
+        user_a, _ = upsert_user_from_firebase(
+            uid="user-a",
+            email="a@example.com",
+            display_name="A",
+            email_verified=True,
+            auth_provider="password",
+        )
+        user_b, _ = upsert_user_from_firebase(
+            uid="user-b",
+            email="b@example.com",
+            display_name="B",
+            email_verified=True,
+            auth_provider="password",
+        )
+        create_scan_record(
+            scan_id="scan-a",
+            org_id=user_a.org_id,
+            target="https://a.example.com",
+        )
+        create_scan_record(
+            scan_id="scan-b",
+            org_id=user_b.org_id,
+            target="https://b.example.com",
+        )
+
+        def _verify(token: str) -> AuthenticatedUser:
+            uid = "user-a" if token == "token-a" else "user-b"
+            return AuthenticatedUser(
+                uid=uid,
+                email=f"{uid}@example.com",
+                email_verified=True,
+                name=uid,
+                picture=None,
+                sign_in_provider="password",
+                claims={"uid": uid},
+            )
+
+        monkeypatch.setattr("core.firebase_auth.verify_id_token", _verify)
+        from app.main import app
+
+        with TestClient(app) as test_client:
+            response = test_client.get(
+                "/orgs/me/scans",
+                headers={"Authorization": "Bearer token-a"},
+            )
+
+        assert response.status_code == 200
+        assert [scan["id"] for scan in response.json()["scans"]] == ["scan-a"]
+        assert response.json()["total"] == 1
+    finally:
+        configure_accounts_db(None)

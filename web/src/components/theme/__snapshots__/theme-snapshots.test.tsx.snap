@@ -1,0 +1,325 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`theme visual snapshots > dashboard + scan detail chrome in dark theme 1`] = `
+<div
+  class="_dashboard_18586d"
+  data-testid="dashboard-shell"
+>
+  <section
+    class="_panel_18586d"
+  >
+    <h2
+      class="_panelTitle_18586d"
+    >
+      Report
+    </h2>
+    <div
+      class="_approval_18586d"
+    >
+      <strong>
+        Approval needed
+      </strong>
+      <p>
+        Active tests require confirmation.
+      </p>
+    </div>
+  </section>
+  <div
+    class="_tableWrap_18586d"
+  >
+    <table
+      class="_table_18586d"
+    >
+      <thead>
+        <tr>
+          <th>
+            Site / domain
+          </th>
+          <th>
+            Date
+          </th>
+          <th>
+            Risk
+          </th>
+          <th>
+            Status
+          </th>
+          <th>
+            Actions
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td
+            class="_target_18586d"
+            data-label="Site / domain"
+            title="https://example.com"
+          >
+            https://example.com
+          </td>
+          <td
+            data-label="Date"
+          >
+            7/1/26, 1:00 PM
+          </td>
+          <td
+            data-label="Risk"
+          >
+            <span
+              class="_severity_18586d"
+              data-severity="critical"
+            >
+              8.2 / 10
+            </span>
+          </td>
+          <td
+            data-label="Status"
+          >
+            <span
+              class="_statusBadge_18586d"
+            >
+              Completed
+            </span>
+          </td>
+          <td
+            data-label="Actions"
+          >
+            <div
+              class="_rowActions_18586d"
+            >
+              <button
+                class="btn _smallButton_18586d"
+                type="button"
+              >
+                View
+              </button>
+              <button
+                class="btn _smallButton_18586d"
+                type="button"
+              >
+                Re-scan
+              </button>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td
+            class="_target_18586d"
+            data-label="Site / domain"
+            title="https://safe.example"
+          >
+            https://safe.example
+          </td>
+          <td
+            data-label="Date"
+          >
+            7/2/26, 1:00 PM
+          </td>
+          <td
+            data-label="Risk"
+          >
+            <span
+              class="_severity_18586d"
+              data-severity="low"
+            >
+              3.1 / 10
+            </span>
+          </td>
+          <td
+            data-label="Status"
+          >
+            <span
+              class="_statusBadge_18586d"
+            >
+              Approval required
+            </span>
+          </td>
+          <td
+            data-label="Actions"
+          >
+            <div
+              class="_rowActions_18586d"
+            >
+              <button
+                class="btn _smallButton_18586d"
+                type="button"
+              >
+                View
+              </button>
+              <button
+                class="btn _smallButton_18586d"
+                type="button"
+              >
+                Re-scan
+              </button>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+`;
+
+exports[`theme visual snapshots > dashboard + scan detail chrome in light theme 1`] = `
+<div
+  class="_dashboard_18586d"
+  data-testid="dashboard-shell"
+>
+  <section
+    class="_panel_18586d"
+  >
+    <h2
+      class="_panelTitle_18586d"
+    >
+      Report
+    </h2>
+    <div
+      class="_approval_18586d"
+    >
+      <strong>
+        Approval needed
+      </strong>
+      <p>
+        Active tests require confirmation.
+      </p>
+    </div>
+  </section>
+  <div
+    class="_tableWrap_18586d"
+  >
+    <table
+      class="_table_18586d"
+    >
+      <thead>
+        <tr>
+          <th>
+            Site / domain
+          </th>
+          <th>
+            Date
+          </th>
+          <th>
+            Risk
+          </th>
+          <th>
+            Status
+          </th>
+          <th>
+            Actions
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td
+            class="_target_18586d"
+            data-label="Site / domain"
+            title="https://example.com"
+          >
+            https://example.com
+          </td>
+          <td
+            data-label="Date"
+          >
+            7/1/26, 1:00 PM
+          </td>
+          <td
+            data-label="Risk"
+          >
+            <span
+              class="_severity_18586d"
+              data-severity="critical"
+            >
+              8.2 / 10
+            </span>
+          </td>
+          <td
+            data-label="Status"
+          >
+            <span
+              class="_statusBadge_18586d"
+            >
+              Completed
+            </span>
+          </td>
+          <td
+            data-label="Actions"
+          >
+            <div
+              class="_rowActions_18586d"
+            >
+              <button
+                class="btn _smallButton_18586d"
+                type="button"
+              >
+                View
+              </button>
+              <button
+                class="btn _smallButton_18586d"
+                type="button"
+              >
+                Re-scan
+              </button>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td
+            class="_target_18586d"
+            data-label="Site / domain"
+            title="https://safe.example"
+          >
+            https://safe.example
+          </td>
+          <td
+            data-label="Date"
+          >
+            7/2/26, 1:00 PM
+          </td>
+          <td
+            data-label="Risk"
+          >
+            <span
+              class="_severity_18586d"
+              data-severity="low"
+            >
+              3.1 / 10
+            </span>
+          </td>
+          <td
+            data-label="Status"
+          >
+            <span
+              class="_statusBadge_18586d"
+            >
+              Approval required
+            </span>
+          </td>
+          <td
+            data-label="Actions"
+          >
+            <div
+              class="_rowActions_18586d"
+            >
+              <button
+                class="btn _smallButton_18586d"
+                type="button"
+              >
+                View
+              </button>
+              <button
+                class="btn _smallButton_18586d"
+                type="button"
+              >
+                Re-scan
+              </button>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+`;

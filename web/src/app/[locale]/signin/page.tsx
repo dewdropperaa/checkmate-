@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
 import { AuthForm } from "@/components/auth/AuthForm";
@@ -22,7 +23,9 @@ export default async function SigninPage({ params }: Props) {
         <AuthGuard mode="guest">
           <h1>{t("signinTitle")}</h1>
           <p className={styles.authSubtitle}>{t("signinSubtitle")}</p>
-          <AuthForm mode="signin" />
+          <Suspense fallback={<p className={styles.authLoading}>{t("checkingSession")}</p>}>
+            <AuthForm mode="signin" />
+          </Suspense>
           <p className={styles.authBack}>
             <Link href="/" className="btn btn-ghost">
               ← {t("backHome")}

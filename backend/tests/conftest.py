@@ -17,6 +17,9 @@ os.environ.setdefault("GROQ_API_KEY", "")
 os.environ["FIRECRAWL_ENABLED"] = "false"
 os.environ["FIRECRAWL_API_KEY"] = ""
 os.environ.setdefault("REQUIRE_TOOLCHAIN_AT_STARTUP", "false")
+os.environ.setdefault("WATCH_SCHEDULER_ENABLED", "false")
+os.environ.setdefault("RESEND_API_KEY", "")
+os.environ.setdefault("NVD_API_KEY", "")
 
 
 @pytest.fixture(autouse=True)

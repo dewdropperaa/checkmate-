@@ -62,8 +62,20 @@ describe("validateSignUpFields", () => {
       "a@b.co",
       "GoodPass1",
       "GoodPass1",
+      true,
     );
     expect(hasFieldErrors(errors)).toBe(false);
+  });
+
+  it("requires terms acceptance", () => {
+    const errors = validateSignUpFields(
+      "a@b.co",
+      "GoodPass1",
+      "GoodPass1",
+      false,
+    );
+    expect(errors.terms).toBe("agreeRequired");
+    expect(hasFieldErrors(errors)).toBe(true);
   });
 });
 

@@ -46,7 +46,7 @@ function buildCsp(): string {
     "style-src 'self' 'unsafe-inline'",
     "script-src 'self' 'unsafe-inline' https://apis.google.com https://*.gstatic.com",
     // Google / Firebase Auth popup + handler iframe
-    "frame-src 'self' https://*.firebaseapp.com https://*.google.com https://accounts.google.com https://apis.google.com",
+    "frame-src 'self' blob: https://*.firebaseapp.com https://*.google.com https://accounts.google.com https://apis.google.com",
     connectSrc,
     // OAuth may POST back through Google / Firebase auth handler
     "form-action 'self' https://accounts.google.com https://*.firebaseapp.com https://*.google.com",

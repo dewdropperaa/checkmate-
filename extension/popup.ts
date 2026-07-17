@@ -58,6 +58,13 @@ const approvalErrorEl = document.getElementById("approval-error") as HTMLParagra
 const toolChecklistEl = document.getElementById("tool-checklist") as HTMLUListElement;
 const approveBtn = document.getElementById("approve-btn") as HTMLButtonElement;
 const rejectBtn = document.getElementById("reject-btn") as HTMLButtonElement;
+const authGateEl = document.getElementById("auth-gate") as HTMLDivElement;
+const scanPanelEl = document.getElementById("scan-panel") as HTMLDivElement;
+const authGateStatusEl = document.getElementById(
+  "auth-gate-status",
+) as HTMLParagraphElement;
+const signInBtn = document.getElementById("signin-btn") as HTMLButtonElement;
+const signUpBtn = document.getElementById("signup-btn") as HTMLButtonElement;
 
 let pollTimer: number | undefined;
 let baseBackendUrl = "";
@@ -94,11 +101,43 @@ async function apiRequest<T>(payload: {
   return sendMessage<ApiResponse<T>>({ type: "API_REQUEST", payload });
 }
 
+async function getSettings(): Promise<{
+  backendBaseUrl: string;
+  authToken: string;
+  connected: boolean;
+}> {
+  const settings = await sendMessage<{
+    ok: boolean;
+    backendBaseUrl?: string;
+    authToken?: string;
+    connected?: boolean;
+  }>({ type: "GET_SETTINGS" });
+  return {
+    backendBaseUrl: (settings.backendBaseUrl ?? "http://127.0.0.1:8000").replace(
+      /\/+$/,
+      "",
+    ),
+    authToken: settings.authToken ?? "",
+    connected: Boolean(settings.connected ?? settings.authToken),
+  };
+}
+
 async function getBackendBaseUrl(): Promise<string> {
-  const settings = await sendMessage<{ ok: boolean; backendBaseUrl?: string }>({
-    type: "GET_SETTINGS",
-  });
-  return (settings.backendBaseUrl ?? "http://localhost:8000").replace(/\/+$/, "");
+  const settings = await getSettings();
+  return settings.backendBaseUrl;
+}
+
+function showAuthGate(message?: string): void {
+  authGateEl.hidden = false;
+  scanPanelEl.hidden = true;
+  if (message) {
+    authGateStatusEl.textContent = message;
+  }
+}
+
+function showScanPanel(): void {
+  authGateEl.hidden = true;
+  scanPanelEl.hidden = false;
 }
 
 async function getActiveTabUrl(): Promise<string> {
@@ -449,7 +488,15 @@ async function checkBackendHealth(): Promise<boolean> {
 }
 
 async function init(): Promise<void> {
-  baseBackendUrl = await getBackendBaseUrl();
+  const settings = await getSettings();
+  baseBackendUrl = settings.backendBaseUrl;
+
+  if (!settings.connected) {
+    showAuthGate("Sign in or create an account on the web app to connect.");
+    return;
+  }
+
+  showScanPanel();
   const currentTabUrl = await getActiveTabUrl();
   activeTarget = currentTabUrl;
   currentUrlEl.textContent = currentTabUrl || "No active tab URL detected.";
@@ -502,6 +549,24 @@ downloadPdfBtn.addEventListener("click", () => {
 
 openOptionsBtn.addEventListener("click", () => {
   void chrome.runtime.openOptionsPage();
+});
+
+signInBtn.addEventListener("click", () => {
+  void sendMessage({ type: "OPEN_WEB_AUTH", payload: { mode: "signin" } }).then(
+    () => {
+      authGateStatusEl.textContent =
+        "Complete sign-in in the browser tab, then reopen this popup.";
+    },
+  );
+});
+
+signUpBtn.addEventListener("click", () => {
+  void sendMessage({ type: "OPEN_WEB_AUTH", payload: { mode: "signup" } }).then(
+    () => {
+      authGateStatusEl.textContent =
+        "Create your account in the browser tab, then reopen this popup.";
+    },
+  );
 });
 
 window.addEventListener("beforeunload", () => {

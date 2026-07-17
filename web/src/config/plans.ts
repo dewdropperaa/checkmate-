@@ -50,6 +50,12 @@ export interface Plan {
   maxTargets: number | null;
   /** Approximate scans/month; null = custom */
   scansPerMonth: number | null;
+  /**
+   * Watch Agent cadence for automated background re-checks.
+   * free = manual only; starter = weekly; pro/agency = daily.
+   * Keep in sync with backend/core/plans.py.
+   */
+  watchCadence: "none" | "weekly" | "daily";
   features: FeatureKey[];
 }
 
@@ -87,6 +93,7 @@ export const PLANS: Plan[] = [
     },
     maxTargets: 1,
     scansPerMonth: 5,
+    watchCadence: "none",
     features: [
       "headerChecks",
       "tlsChecks",
@@ -107,6 +114,7 @@ export const PLANS: Plan[] = [
     },
     maxTargets: 3,
     scansPerMonth: 30,
+    watchCadence: "weekly",
     features: [
       "headerChecks",
       "tlsChecks",
@@ -132,6 +140,7 @@ export const PLANS: Plan[] = [
     },
     maxTargets: 15,
     scansPerMonth: 150,
+    watchCadence: "daily",
     features: [
       "headerChecks",
       "tlsChecks",
@@ -158,6 +167,7 @@ export const PLANS: Plan[] = [
     },
     maxTargets: null,
     scansPerMonth: null,
+    watchCadence: "daily",
     features: [
       "headerChecks",
       "tlsChecks",

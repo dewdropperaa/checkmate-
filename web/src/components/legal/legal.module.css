@@ -1,0 +1,48 @@
+.doc {
+  padding: clamp(3rem, 8vw, 5rem) 0;
+  max-width: 42rem;
+}
+
+.header {
+  margin-bottom: 2rem;
+}
+
+.header h1 {
+  margin: 0 0 0.5rem;
+  color: var(--accent-bright);
+  font-size: clamp(1.5rem, 4vw, 1.85rem);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.updated {
+  margin: 0;
+  color: var(--fg-faint);
+  font-size: 0.85rem;
+}
+
+.section {
+  margin-bottom: 1.75rem;
+}
+
+.section h2 {
+  margin: 0 0 0.65rem;
+  color: var(--fg);
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+
+.section p {
+  margin: 0 0 0.75rem;
+  color: var(--fg-dim);
+  font-size: 0.95rem;
+  line-height: 1.65;
+}
+
+.section p:last-child {
+  margin-bottom: 0;
+}
+
+.back {
+  margin: 2.5rem 0 0;
+}

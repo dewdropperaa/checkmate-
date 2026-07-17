@@ -333,15 +333,40 @@
 
     <main class="container">
       <h1>checkmate / options</h1>
-      <p class="subtle">configure backend access and authorized scan targets</p>
+      <p class="subtle">sign in on the web app, then connect this extension to your account</p>
+
+      <section class="card">
+        <h2>account</h2>
+        <p id="connection-status" class="empty">checking connection…</p>
+        <div class="row" style="margin-top: 12px; flex-wrap: wrap">
+          <button id="connect-account" class="primary" type="button">
+            Sign in to connect
+          </button>
+          <button id="create-account" class="secondary" type="button">
+            Create account
+          </button>
+          <button id="disconnect-account" class="danger" type="button" hidden>
+            Disconnect
+          </button>
+        </div>
+        <label for="auth-token" style="margin-top: 16px">
+          Connection token (paste if auto-connect failed)
+        </label>
+        <input
+          id="auth-token"
+          type="password"
+          placeholder="cmext_…"
+          autocomplete="off"
+        />
+      </section>
 
       <section class="card">
         <h2>backend</h2>
         <label for="backend-url">Backend base URL</label>
-        <input id="backend-url" type="url" placeholder="http://localhost:8000" />
-        <label for="auth-token">Auth token</label>
-        <input id="auth-token" type="password" placeholder="Bearer token value" />
-        <button id="save-settings" class="primary" type="button">Save backend settings</button>
+        <input id="backend-url" type="url" placeholder="http://127.0.0.1:8000" />
+        <label for="webapp-url">Web app URL</label>
+        <input id="webapp-url" type="url" placeholder="http://localhost:3000" />
+        <button id="save-settings" class="primary" type="button">Save settings</button>
       </section>
 
       <section class="card">
