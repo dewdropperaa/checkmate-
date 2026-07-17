@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "firebase": "^12.16.0",
-    "next": "^15.2.4",
+    "next": "^15.5.18",
     "next-intl": "^4.13.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

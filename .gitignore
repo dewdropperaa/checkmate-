@@ -32,3 +32,6 @@ backend/tools-bin/testssl-repo/
 # OS
 .DS_Store
 Thumbs.db
+
+# Vercel CLI local link
+.vercel
