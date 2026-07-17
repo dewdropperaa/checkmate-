@@ -79,14 +79,21 @@ class SubfinderTool(BaseSecurityTool):
         binary_path = self.get_binary_path()
         settings = get_settings()
 
+        timeout = settings.subfinder_timeout or self.timeout
+
+        # Bound subfinder's own runtime well under the subprocess timeout so it
+        # exits cleanly instead of being force-killed (which would be treated as
+        # a retryable timeout and rerun several times, stalling recon). We drop
+        # "-all": it enables dozens of slow/keyless sources that routinely hang
+        # and add little for a single target.
+        source_budget = max(int(timeout) - 15, 20)
         args = [
             "-d", target,
             "-json",
             "-silent",
-            "-all",
+            "-timeout", "20",
+            "-max-time", str(max(source_budget // 60, 1)),
         ]
-
-        timeout = settings.subfinder_timeout or self.timeout
 
         exit_code, stdout, stderr, timed_out = await run_subprocess_safely(
             binary_path=binary_path,

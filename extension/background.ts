@@ -68,6 +68,7 @@ async function performApiRequest(
 
   if (authToken) {
     headers.Authorization = `Bearer ${authToken}`;
+    headers["X-API-Key"] = authToken;
   }
 
   const response = await fetch(buildUrl(backendBaseUrl, payload.path, payload.query), {

@@ -1,26 +1,29 @@
-"""Tests for the finding-verification agent and confidence-weighted scoring."""
+"""Tests for the active finding-verification agent and confidence-weighted scoring."""
 
 from __future__ import annotations
 
 import os
 from typing import Any
 
+import httpx
 import pytest
 
 os.environ.setdefault("AUTHORIZED_TARGETS", "authorized.example.com")
 
 from agents.scoring import run_scoring
 from agents.state import ScanState
-from agents.verification import FindingVerifier, run_verification_async
+from agents.verification import ActiveVerifier, run_verification_async
+
+_BASE_URL = "https://authorized.example.com/"
 
 
 def _finding(**overrides: Any) -> dict[str, Any]:
     base = {
-        "tool": "nuclei",
-        "type": "exposure-config",
-        "url": "https://authorized.example.com/config",
-        "severity": "high",
-        "description": "Exposed config",
+        "tool": "header-checks",
+        "type": "cors-wildcard",
+        "url": _BASE_URL,
+        "severity": "low",
+        "description": "CORS wildcard",
         "evidence": None,
         "raw_data": {},
     }
@@ -28,154 +31,238 @@ def _finding(**overrides: Any) -> dict[str, Any]:
     return base
 
 
-def _page(url: str, markdown: str) -> dict[str, str]:
-    return {"url": url, "markdown": markdown}
+def _response(
+    *,
+    headers: dict[str, str] | list[tuple[str, str]] | None = None,
+    text: str = "",
+    status_code: int = 200,
+) -> httpx.Response:
+    header_list: list[tuple[str, str]] = []
+    if isinstance(headers, dict):
+        header_list = list(headers.items())
+    elif isinstance(headers, list):
+        header_list = headers
+    return httpx.Response(status_code, headers=header_list, text=text)
 
 
-class FakeFirecrawl:
-    """Stand-in FirecrawlTool exposing an async scrape_content."""
+class FakeClient:
+    """Injectable stand-in for httpx.AsyncClient used by ActiveVerifier."""
 
-    def __init__(self, content_by_url: dict[str, str | None]) -> None:
-        self._content = content_by_url
-        self.scraped: list[str] = []
+    def __init__(
+        self,
+        responses: dict[str, httpx.Response] | None = None,
+        *,
+        raise_for: set[str] | None = None,
+    ) -> None:
+        self._responses = responses or {}
+        self._raise_for = raise_for or set()
+        self.requested: list[str] = []
 
-    async def scrape_content(self, url: str, timeout: float | None = None) -> str | None:
-        self.scraped.append(url)
-        return self._content.get(url)
+    async def get(self, url: str, headers: dict[str, str] | None = None) -> httpx.Response:
+        self.requested.append(url)
+        if url in self._raise_for:
+            raise httpx.ConnectError("no route to host")
+        if url in self._responses:
+            return self._responses[url]
+        raise httpx.ConnectError("no route to host")
+
+    async def aclose(self) -> None:  # pragma: no cover - not used with injection
+        pass
 
 
-class TestClassification:
-    """Only content-based findings are corroborated; others untouched."""
+async def _verify_single(finding: dict[str, Any], client: FakeClient) -> dict[str, Any]:
+    verifier = ActiveVerifier(client=client)
+    result = await verifier.verify([finding])
+    return result[0]
 
+
+class TestHeaderChecks:
     @pytest.mark.asyncio
-    async def test_header_finding_not_applicable(self) -> None:
-        findings = [
-            _finding(tool="header-checks", type="missing-csp", raw_data={}, evidence="No CSP")
-        ]
-        verifier = FindingVerifier(pages=[])
-        result = await verifier.verify(findings)
-        assert result[0]["verification"]["status"] == "not_applicable"
-        assert result[0]["confidence"] == 1.0
-        assert "likely_false_positive" not in result[0]
-
-    @pytest.mark.asyncio
-    async def test_tls_and_sqli_not_applicable(self) -> None:
-        findings = [
-            _finding(tool="testssl", type="tls-weak-cipher"),
-            _finding(tool="sqlmap", type="sqli"),
-            _finding(tool="retirejs", type="vulnerable-js-jquery"),
-        ]
-        verifier = FindingVerifier(pages=[])
-        result = await verifier.verify(findings)
-        assert all(f["verification"]["status"] == "not_applicable" for f in result)
-        assert all(f["confidence"] == 1.0 for f in result)
-
-
-class TestCorroboration:
-    """Content-based findings are confirmed/denied against page content."""
-
-    @pytest.mark.asyncio
-    async def test_confirmed_when_token_in_cached_page(self) -> None:
-        findings = [
-            _finding(
-                raw_data={"extracted-results": ["AKIAEXAMPLESECRETKEY"]},
-                evidence="Extracted: AKIAEXAMPLESECRETKEY",
-            )
-        ]
-        pages = [
-            _page(
-                "https://authorized.example.com/config",
-                "Config dump: AKIAEXAMPLESECRETKEY is here",
-            )
-        ]
-        verifier = FindingVerifier(pages=pages)
-        result = await verifier.verify(findings)
-        v = result[0]["verification"]
-        assert v["status"] == "confirmed"
-        assert "AKIAEXAMPLESECRETKEY" in v["matched"]
-        assert result[0]["confidence"] == 0.98
-        assert not result[0].get("likely_false_positive")
-
-    @pytest.mark.asyncio
-    async def test_unconfirmed_flags_likely_false_positive(self) -> None:
-        findings = [
-            _finding(raw_data={"extracted-results": ["AKIAEXAMPLESECRETKEY"]})
-        ]
-        pages = [
-            _page(
-                "https://authorized.example.com/config",
-                "This page has nothing sensitive at all",
-            )
-        ]
-        verifier = FindingVerifier(pages=pages)
-        result = await verifier.verify(findings)
-        assert result[0]["verification"]["status"] == "unconfirmed"
-        assert result[0]["likely_false_positive"] is True
-        assert result[0]["confidence"] == 0.4
-
-    @pytest.mark.asyncio
-    async def test_unverified_when_no_content_available(self) -> None:
-        # Firecrawl disabled in conftest and no page cache -> content is None.
-        findings = [
-            _finding(raw_data={"extracted-results": ["AKIAEXAMPLESECRETKEY"]})
-        ]
-        verifier = FindingVerifier(
-            pages=[], firecrawl=FakeFirecrawl({})  # returns None for the URL
+    async def test_cors_wildcard_confirmed(self) -> None:
+        client = FakeClient(
+            {_BASE_URL: _response(headers={"access-control-allow-origin": "*"})}
         )
-        result = await verifier.verify(findings)
-        assert result[0]["verification"]["status"] == "unverified"
-        assert result[0]["confidence"] == 0.8
-        assert not result[0].get("likely_false_positive")
+        result = await _verify_single(_finding(type="cors-wildcard"), client)
+        assert result["verification"]["status"] == "confirmed"
+        assert result["confidence"] == 0.99
+        assert "Access-Control-Allow-Origin: *" in result["verification"]["evidence"]
+        assert not result.get("likely_false_positive")
 
     @pytest.mark.asyncio
-    async def test_no_signature_when_no_tokens(self) -> None:
-        findings = [_finding(raw_data={}, evidence="Matcher: status")]
-        verifier = FindingVerifier(pages=[])
-        result = await verifier.verify(findings)
-        assert result[0]["verification"]["status"] == "no_signature"
-        assert result[0]["confidence"] == 1.0
-
-    @pytest.mark.asyncio
-    async def test_scrapes_url_when_not_cached(self) -> None:
-        url = "https://authorized.example.com/config"
-        findings = [
-            _finding(raw_data={"extracted-results": ["SENSITIVE_TOKEN_XYZ"]})
-        ]
-        fake = FakeFirecrawl({url: "leaked SENSITIVE_TOKEN_XYZ found"})
-        verifier = FindingVerifier(pages=[], firecrawl=fake)
-        result = await verifier.verify(findings)
-        assert fake.scraped == [url]
-        assert result[0]["verification"]["status"] == "confirmed"
-
-
-class TestScrapeBudget:
-    """On-demand scraping must respect the configured budget."""
-
-    @pytest.mark.asyncio
-    async def test_budget_limits_scrapes(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import agents.verification as verification_module
-
-        settings = verification_module.get_settings()
-        monkeypatch.setattr(settings, "firecrawl_verify_max_urls", 1, raising=False)
-
-        findings = [
-            _finding(url="https://authorized.example.com/a", raw_data={"extracted-results": ["TOKENAAAA"]}),
-            _finding(url="https://authorized.example.com/b", raw_data={"extracted-results": ["TOKENBBBB"]}),
-        ]
-        fake = FakeFirecrawl(
-            {
-                "https://authorized.example.com/a": "has TOKENAAAA",
-                "https://authorized.example.com/b": "has TOKENBBBB",
-            }
+    async def test_cors_wildcard_refuted(self) -> None:
+        client = FakeClient(
+            {_BASE_URL: _response(headers={"access-control-allow-origin": "https://trusted.example"})}
         )
-        verifier = FindingVerifier(pages=[], firecrawl=fake)
-        result = await verifier.verify(findings)
+        result = await _verify_single(_finding(type="cors-wildcard"), client)
+        assert result["verification"]["status"] == "refuted"
+        assert result["confidence"] == 0.1
+        assert result["likely_false_positive"] is True
 
-        # Only one URL scraped due to budget; second is unverified.
-        assert len(fake.scraped) == 1
-        statuses = {f["verification"]["status"] for f in result}
-        assert "confirmed" in statuses
-        assert "unverified" in statuses
+    @pytest.mark.asyncio
+    async def test_csp_unsafe_inline_confirmed(self) -> None:
+        client = FakeClient(
+            {_BASE_URL: _response(headers={"content-security-policy": "default-src 'self' 'unsafe-inline'"})}
+        )
+        result = await _verify_single(_finding(type="csp-unsafe-inline"), client)
+        assert result["verification"]["status"] == "confirmed"
+
+    @pytest.mark.asyncio
+    async def test_missing_csp_confirmed_when_absent(self) -> None:
+        client = FakeClient({_BASE_URL: _response(headers={})})
+        result = await _verify_single(_finding(type="missing-csp"), client)
+        assert result["verification"]["status"] == "confirmed"
+
+    @pytest.mark.asyncio
+    async def test_missing_csp_refuted_when_present(self) -> None:
+        client = FakeClient(
+            {_BASE_URL: _response(headers={"content-security-policy": "default-src 'self'"})}
+        )
+        result = await _verify_single(_finding(type="missing-csp"), client)
+        assert result["verification"]["status"] == "refuted"
+
+    @pytest.mark.asyncio
+    async def test_insecure_cookie_confirmed(self) -> None:
+        client = FakeClient(
+            {_BASE_URL: _response(headers=[("set-cookie", "sid=abc; Path=/")])}
+        )
+        finding = _finding(type="insecure-cookie", raw_data={"cookie": "sid"})
+        result = await _verify_single(finding, client)
+        assert result["verification"]["status"] == "confirmed"
+
+
+class TestZapChecks:
+    @pytest.mark.asyncio
+    async def test_zap_cors_confirmed(self) -> None:
+        client = FakeClient(
+            {_BASE_URL: _response(headers={"access-control-allow-origin": "*"})}
+        )
+        finding = _finding(
+            tool="zap",
+            type="zap-10098",
+            description="Cross-Domain Misconfiguration: ...",
+        )
+        result = await _verify_single(finding, client)
+        assert result["verification"]["status"] == "confirmed"
+
+    @pytest.mark.asyncio
+    async def test_zap_cache_confirmed_with_age(self) -> None:
+        client = FakeClient({_BASE_URL: _response(headers={"age": "120"})})
+        finding = _finding(
+            tool="zap", type="zap-10050", description="Retrieved from Cache: ..."
+        )
+        result = await _verify_single(finding, client)
+        assert result["verification"]["status"] == "confirmed"
+        assert "Age: 120" in result["verification"]["evidence"]
+
+    @pytest.mark.asyncio
+    async def test_zap_cache_refuted_without_cache_headers(self) -> None:
+        client = FakeClient({_BASE_URL: _response(headers={})})
+        finding = _finding(
+            tool="zap", type="zap-10050", description="Retrieved from Cache: ..."
+        )
+        result = await _verify_single(finding, client)
+        assert result["verification"]["status"] == "refuted"
+
+    @pytest.mark.asyncio
+    async def test_zap_timestamp_confirmed_when_token_in_body(self) -> None:
+        client = FakeClient(
+            {_BASE_URL: _response(text="build stamp 1609459200 here")}
+        )
+        finding = _finding(
+            tool="zap",
+            type="zap-10096",
+            description="Timestamp Disclosure - Unix",
+            evidence="1609459200",
+        )
+        result = await _verify_single(finding, client)
+        assert result["verification"]["status"] == "confirmed"
+
+
+class TestToolAttested:
+    @pytest.mark.asyncio
+    async def test_sqlmap_is_tool_attested(self) -> None:
+        client = FakeClient({})
+        finding = _finding(tool="sqlmap", type="sqli", url="https://authorized.example.com/item?id=1")
+        result = await _verify_single(finding, client)
+        assert result["verification"]["status"] == "tool_attested"
+        assert result["confidence"] == 0.95
+        # sqlmap findings are not re-fetched.
+        assert client.requested == []
+
+    @pytest.mark.asyncio
+    async def test_testssl_is_tool_attested(self) -> None:
+        client = FakeClient({})
+        finding = _finding(tool="testssl", type="tls-weak-cipher")
+        result = await _verify_single(finding, client)
+        assert result["verification"]["status"] == "tool_attested"
+
+
+class TestGenericEvidenceMatch:
+    @pytest.mark.asyncio
+    async def test_nuclei_confirmed_when_token_in_body(self) -> None:
+        client = FakeClient(
+            {_BASE_URL: _response(text="leaked AKIAEXAMPLESECRETKEY here")}
+        )
+        finding = _finding(
+            tool="nuclei",
+            type="exposure-config",
+            raw_data={"extracted-results": ["AKIAEXAMPLESECRETKEY"]},
+        )
+        result = await _verify_single(finding, client)
+        assert result["verification"]["status"] == "confirmed"
+
+    @pytest.mark.asyncio
+    async def test_nuclei_refuted_when_token_absent(self) -> None:
+        client = FakeClient({_BASE_URL: _response(text="nothing sensitive here")})
+        finding = _finding(
+            tool="nuclei",
+            type="exposure-config",
+            raw_data={"extracted-results": ["AKIAEXAMPLESECRETKEY"]},
+        )
+        result = await _verify_single(finding, client)
+        assert result["verification"]["status"] == "refuted"
+        assert result["likely_false_positive"] is True
+
+    @pytest.mark.asyncio
+    async def test_no_evidence_falls_back_to_tool_attested(self) -> None:
+        client = FakeClient({_BASE_URL: _response(text="page")})
+        finding = _finding(tool="nuclei", type="some-check", raw_data={}, evidence=None)
+        result = await _verify_single(finding, client)
+        assert result["verification"]["status"] == "tool_attested"
+
+
+class TestUnreachable:
+    @pytest.mark.asyncio
+    async def test_unreachable_when_fetch_fails(self) -> None:
+        client = FakeClient(raise_for={_BASE_URL})
+        result = await _verify_single(_finding(type="cors-wildcard"), client)
+        assert result["verification"]["status"] == "unreachable"
+        assert result["confidence"] == 0.5
+        assert not result.get("likely_false_positive")
+
+    @pytest.mark.asyncio
+    async def test_http_404_is_treated_as_unreachable_not_refuted(self) -> None:
+        client = FakeClient({_BASE_URL: _response(status_code=404, text="not found")})
+        result = await _verify_single(_finding(type="missing-csp"), client)
+        assert result["verification"]["status"] == "unreachable"
+        assert result["confidence"] == 0.5
+        assert not result.get("likely_false_positive")
+
+
+class TestResponseCaching:
+    @pytest.mark.asyncio
+    async def test_same_url_fetched_once(self) -> None:
+        client = FakeClient(
+            {_BASE_URL: _response(headers={"access-control-allow-origin": "*"})}
+        )
+        verifier = ActiveVerifier(client=client)
+        await verifier.verify(
+            [
+                _finding(type="cors-wildcard"),
+                _finding(type="missing-csp"),
+            ]
+        )
+        assert client.requested.count(_BASE_URL) == 1
 
 
 class TestConfidenceWeightedScoring:
@@ -200,7 +287,6 @@ class TestConfidenceWeightedScoring:
     def test_default_confidence_is_backward_compatible(self) -> None:
         findings = [_finding(severity="high")]
         result = run_scoring(self._state_with(findings))
-        # high weight 6.0, confidence 1.0, max 1*10 -> 6.0
         assert result["severity_scores"]["overall_risk_score"] == 6.0
         assert result["severity_scores"]["likely_false_positives"] == 0
 
@@ -208,32 +294,45 @@ class TestConfidenceWeightedScoring:
         high_conf = _finding(severity="high", confidence=1.0)
         low_conf = _finding(
             severity="high",
-            confidence=0.4,
+            confidence=0.1,
             likely_false_positive=True,
-            verification={"status": "unconfirmed"},
+            verification={"status": "refuted"},
         )
 
         base = run_scoring(self._state_with([high_conf]))
         lowered = run_scoring(self._state_with([low_conf]))
 
-        assert lowered["severity_scores"]["overall_risk_score"] < base["severity_scores"]["overall_risk_score"]
+        assert (
+            lowered["severity_scores"]["overall_risk_score"]
+            < base["severity_scores"]["overall_risk_score"]
+        )
         assert lowered["severity_scores"]["likely_false_positives"] == 1
-        # The finding is still present and counted (not hidden).
         assert lowered["severity_scores"]["total_findings"] == 1
         assert lowered["severity_scores"]["severity_counts"]["high"] == 1
 
 
 class TestVerificationNode:
-    """The graph-node wrapper returns enriched findings."""
-
     @pytest.mark.asyncio
-    async def test_run_verification_async_enriches(self) -> None:
-        state = {
-            "findings": [_finding(raw_data={"extracted-results": ["MARKERTOKEN"]})],
-            "recon_results": {
-                "pages": [_page("https://authorized.example.com/config", "MARKERTOKEN present")]
-            },
-        }
+    async def test_run_verification_async_enriches(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        client = FakeClient(
+            {_BASE_URL: _response(headers={"access-control-allow-origin": "*"})}
+        )
+
+        # Inject the fake client into the verifier the node creates.
+        import agents.verification as verification_module
+
+        real_init = verification_module.ActiveVerifier.__init__
+
+        def _patched_init(self: Any, client_arg: Any = None) -> None:
+            real_init(self, client=client)
+
+        monkeypatch.setattr(
+            verification_module.ActiveVerifier, "__init__", _patched_init
+        )
+
+        state = {"findings": [_finding(type="cors-wildcard")], "recon_results": {}}
         result = await run_verification_async(state)  # type: ignore[arg-type]
         assert result["status"] == "verifying"
         assert result["findings"][0]["verification"]["status"] == "confirmed"

@@ -1,13 +1,14 @@
-# Sentinel Scan
+# checkmate
 
 Multi-agent web vulnerability scanner with a **Chrome Manifest V3 extension** frontend and a **Python FastAPI** backend. This repository is the production scaffold — scanning agents and external tool integrations are added in later phases.
 
 ## Architecture
 
 ```
-sentinel-scan/
+checkmate/
 ├── backend/          # FastAPI API, agents, tool wrappers, scope enforcement
-└── extension/        # Chrome MV3 extension (Vite + TypeScript)
+├── extension/        # Chrome MV3 extension (Vite + TypeScript)
+└── web/              # Marketing site (Next.js) — FR/EN landing + auth stubs
 ```
 
 ## Prerequisites
@@ -38,6 +39,15 @@ Edit `.env` and set `AUTHORIZED_TARGETS` to a comma-separated list of domains or
 AUTHORIZED_TARGETS=authorized.example.com,https://staging.example.com
 ```
 
+For **local development** without installing every security CLI on your machine, keep the defaults in `.env.example`:
+
+```env
+REQUIRE_TOOLCHAIN_AT_STARTUP=false
+ZAP_API_URL=http://localhost:8080
+```
+
+The API will start, but real scans need the full tool chain (use Docker Compose below). With `REQUIRE_TOOLCHAIN_AT_STARTUP=true`, startup fails until subfinder, nuclei, ZAP, and the other tools are available.
+
 Start the API:
 
 ```bash
@@ -53,7 +63,7 @@ The server listens on `http://127.0.0.1:8000`. Interactive docs: `http://127.0.0
 | `POST` | `/scan` | Queue a scan for an authorized target |
 | `GET` | `/scan/{id}/status?target=...` | Poll scan status |
 | `GET` | `/scan/{id}/report?target=...` | Retrieve scan report |
-| `GET` | `/scan/{id}/report/{format}?target=...` | Download report artifact in `json`, `md`, or `html` |
+| `GET` | `/scan/{id}/report/{format}?target=...` | Download report artifact in `json`, `md`, `html`, or `pdf` |
 
 Every endpoint validates the target against the allowlist **before** any other logic. Out-of-scope targets receive **403 Forbidden**.
 The `/scan` endpoint is also rate-limited and concurrency-limited per client identity (IP or API key) to prevent unbounded scan launches.

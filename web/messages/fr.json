@@ -1,0 +1,261 @@
+{
+  "meta": {
+    "title": "checkmate — Détectez les vulnérabilités avant les hackers",
+    "description": "Scan de sécurité automatisé pour sites web. Découvrez les mauvaises configurations, headers faibles, problèmes TLS et plus. Rapports IA en quelques minutes."
+  },
+  "nav": {
+    "how": "Comment ça marche",
+    "features": "Fonctionnalités",
+    "pricing": "Tarifs",
+    "faq": "FAQ",
+    "signIn": "Connexion",
+    "getStarted": "Essai gratuit",
+    "lang": "Langue"
+  },
+  "hero": {
+    "badge": "Scan de sécurité simplifié",
+    "headline": "Détectez les failles ",
+    "headlineHighlight": "avant les hackers.",
+    "tagline": "Scan de sécurité automatisé qui détecte les mauvaises configurations, headers faibles, fichiers exposés et plus. Résumés IA et rapports PDF en quelques minutes.",
+    "ctaPrimary": "Commencer gratuitement",
+    "ctaSecondary": "Voir comment ça marche",
+    "stat1Label": "Scans effectués",
+    "stat2Label": "Vulnérabilités",
+    "stat3Label": "Précision"
+  },
+  "socialProof": {
+    "label": "Adopté par les équipes sécurité au Maroc",
+    "companies": "Entreprises protégées",
+    "scans": "Scans effectués",
+    "vulns": "Vulnérabilités trouvées",
+    "uptime": "Disponibilité"
+  },
+  "context": {
+    "label": "contexte",
+    "text": "La sensibilisation à la cybersécurité progresse au Maroc — les équipes web ont besoin de contrôles réguliers, pas seulement d'audits ponctuels. checkmate aide à surveiller en continu les cibles autorisées."
+  },
+  "how": {
+    "title": "Comment ça marche",
+    "subtitle": "Du scan à la correction en quatre étapes simples. Aucune expertise sécurité requise.",
+    "steps": {
+      "scan": {
+        "title": "Pointer & Scanner",
+        "body": "Entrez votre URL cible. Nos scanners découvrent automatiquement les sous-domaines, crawlent les pages et cartographient votre surface d'attaque."
+      },
+      "findings": {
+        "title": "Obtenir les résultats",
+        "body": "Recevez des résultats détaillés classés par sévérité — problèmes critiques en premier. Chaque finding inclut preuves et contexte."
+      },
+      "summary": {
+        "title": "Analyse IA",
+        "body": "Notre IA génère un résumé exécutif expliquant les risques en langage clair, plus une feuille de route de remédiation priorisée."
+      },
+      "fix": {
+        "title": "Corriger & Exporter",
+        "body": "Exportez des rapports PDF professionnels pour vos parties prenantes. Obtenez des snippets de config pour corriger rapidement."
+      }
+    }
+  },
+  "features": {
+    "title": "Tout ce qu'il faut pour sécuriser vos apps web",
+    "subtitle": "Scan de sécurité entreprise sans la complexité entreprise.",
+    "items": {
+      "headerChecks": {
+        "title": "Headers de sécurité",
+        "body": "CSP, HSTS, X-Frame-Options, CORS, flags cookies — analyse complète des headers selon les guidelines OWASP."
+      },
+      "tlsChecks": {
+        "title": "Analyse TLS/SSL",
+        "body": "Audit complet de la configuration TLS. Détection des chiffrements faibles, certificats expirés et vulnérabilités de protocole."
+      },
+      "exposedFiles": {
+        "title": "Scan de vulnérabilités",
+        "body": "Scan Nuclei pour les CVE connues, panneaux admin exposés, mauvaises configs et fuites de fichiers sensibles."
+      },
+      "subdomains": {
+        "title": "Découverte d'assets",
+        "body": "Énumération automatique des sous-domaines et crawling. Trouvez les assets oubliés avant les attaquants."
+      },
+      "aiSummary": {
+        "title": "Résumé exécutif IA",
+        "body": "Analyse GPT qui explique les findings en termes business. Parfait pour les rapports aux parties prenantes."
+      },
+      "agencyReports": {
+        "title": "Rapports professionnels",
+        "body": "Exports PDF élégants avec findings, recommandations et étapes de remédiation. White-label bientôt disponible."
+      }
+    }
+  },
+  "testimonials": {
+    "label": "témoignages",
+    "title": "Adopté par les équipes soucieuses de sécurité",
+    "testimonial1": {
+      "quote": "checkmate a trouvé des mauvaises configs qu'on avait ratées dans nos audits manuels. Le résumé IA nous a fait gagner des heures.",
+      "name": "Ahmed K.",
+      "role": "CTO",
+      "company": "TechStartup MA"
+    },
+    "testimonial2": {
+      "quote": "On utilise checkmate pour toutes nos évaluations sécurité client. Les rapports PDF sont pro et les clients adorent la clarté.",
+      "name": "Sara M.",
+      "role": "Lead Sécurité",
+      "company": "Agence Digitale"
+    },
+    "testimonial3": {
+      "quote": "Enfin un outil sécurité qui ne nécessite pas un doctorat. Je lance des scans chaque semaine et je dors mieux la nuit.",
+      "name": "Youssef B.",
+      "role": "Fondateur",
+      "company": "WebStudio"
+    }
+  },
+  "cta": {
+    "title": "Prêt à sécuriser vos applications web ?",
+    "text": "Commencez à scanner en quelques minutes. Pas de carte bancaire requise.",
+    "primary": "Commencer gratuitement",
+    "secondary": "Contacter les ventes"
+  },
+  "featureKeys": {
+    "headerChecks": "Analyse des headers HTTP",
+    "tlsChecks": "Vérifications TLS (testssl)",
+    "subdomainDiscovery": "Découverte de sous-domaines",
+    "nucleiMisconfig": "Scan Nuclei (vulns / misconfig)",
+    "jsDependencyCve": "CVE JS (retire.js)",
+    "aiExecutiveSummary": "Résumé exécutif IA",
+    "pdfHtmlReports": "Rapports PDF / HTML / MD",
+    "chromeExtension": "Extension Chrome",
+    "activeTesting": "Tests actifs (ZAP / sqlmap)",
+    "authorizedTargets": "Cibles autorisées uniquement",
+    "whiteLabelReports": "Rapports white-label",
+    "multiClientWorkspace": "Espace multi-clients",
+    "prioritySupport": "Support prioritaire"
+  },
+  "plans": {
+    "title": "Tarifs simples et transparents",
+    "subtitle": "Commencez gratuitement, évoluez selon vos besoins.",
+    "monthly": "Mensuel",
+    "yearly": "Annuel",
+    "yearlyHint": "Économisez 20%",
+    "targets": "{count} cible",
+    "targets_plural": "{count} cibles",
+    "targetsCustom": "Cibles illimitées",
+    "scans": "{count} scans/mois",
+    "scansCustom": "Scans illimités",
+    "ctaSignup": "Commencer",
+    "ctaContact": "Nous contacter",
+    "free": {
+      "name": "Gratuit",
+      "blurb": "Parfait pour essayer checkmate sur vos propres projets."
+    },
+    "starter": {
+      "name": "Starter",
+      "blurb": "Pour les freelances et petites équipes sérieuses sur la sécurité."
+    },
+    "pro": {
+      "name": "Pro",
+      "blurb": "Pour les équipes en croissance nécessitant des scans approfondis."
+    },
+    "agency": {
+      "name": "Agence",
+      "blurb": "Pour les agences gérant plusieurs clients avec besoins white-label."
+    }
+  },
+  "faq": {
+    "title": "Questions fréquentes",
+    "items": [
+      {
+        "q": "Que puis-je scanner avec checkmate ?",
+        "a": "Vous pouvez scanner toute application web que vous possédez ou pour laquelle vous avez une autorisation explicite. checkmate vérifie les headers de sécurité, configuration TLS, sous-domaines, vulnérabilités connues, fichiers exposés et plus."
+      },
+      {
+        "q": "Cela remplace-t-il un test d'intrusion ?",
+        "a": "Non. checkmate est pour la surveillance continue entre les audits. Il détecte les mauvaises configurations courantes et vulnérabilités connues, mais ne remplace pas un test d'intrusion manuel complet par des professionnels qualifiés."
+      },
+      {
+        "q": "Comment fonctionne le résumé IA ?",
+        "a": "Notre IA analyse les findings de votre scan et génère un résumé exécutif en langage clair expliquant les risques et une feuille de route de remédiation priorisée. Idéal pour partager avec les parties prenantes non techniques."
+      },
+      {
+        "q": "Où s'exécutent les scans ?",
+        "a": "checkmate s'exécute sur votre backend auto-hébergé. Vous contrôlez vos données. L'extension Chrome se connecte à votre propre serveur, pas à un cloud tiers."
+      },
+      {
+        "q": "Puis-je utiliser checkmate pour mes clients ?",
+        "a": "Oui ! Le plan Agence inclut des fonctionnalités pour gérer plusieurs clients, dont les rapports PDF white-label (bientôt disponibles). Beaucoup d'agences digitales utilisent checkmate pour les évaluations sécurité client."
+      }
+    ]
+  },
+  "footer": {
+    "tagline": "Scan de sécurité simplifié",
+    "terms": "Conditions",
+    "privacy": "Confidentialité",
+    "contact": "Contact",
+    "cta": "Essai gratuit",
+    "rights": "© 2026 checkmate. Tous droits réservés."
+  },
+  "auth": {
+    "signupTitle": "Créer votre compte",
+    "signupSubtitle": "Commencez à scanner avec un compte checkmate gratuit.",
+    "signinTitle": "Bon retour",
+    "signinSubtitle": "Connectez-vous pour ouvrir votre tableau de bord sécurité.",
+    "email": "E-mail",
+    "password": "Mot de passe",
+    "confirmPassword": "Confirmer le mot de passe",
+    "passwordStrength": "Force",
+    "strength": {
+      "empty": "—",
+      "weak": "Faible",
+      "fair": "Moyen",
+      "good": "Bon",
+      "strong": "Fort"
+    },
+    "submitSignIn": "Se connecter",
+    "submitSignUp": "Créer un compte",
+    "submitting": "Veuillez patienter…",
+    "forgotPassword": "Mot de passe oublié ?",
+    "continueWithGoogle": "Continuer avec Google",
+    "or": "ou",
+    "noAccount": "Pas encore de compte ?",
+    "hasAccount": "Déjà un compte ?",
+    "goToSignUp": "S'inscrire",
+    "goToSignIn": "Se connecter",
+    "backToSignIn": "Retour à la connexion",
+    "backHome": "Retour à checkmate",
+    "checkInbox": "Vérifiez votre boîte mail — nous avons envoyé un lien de confirmation. Vous pourrez vous connecter après vérification.",
+    "verifyEmailTitle": "Vérifiez votre e-mail",
+    "verifyEmailBody": "Nous avons envoyé un lien de vérification. Ouvrez-le pour débloquer votre tableau de bord.",
+    "resetSentTitle": "Vérifiez votre e-mail",
+    "resetSent": "Si un compte existe pour cet e-mail, un lien de réinitialisation est en route.",
+    "checkingSession": "Vérification de la session…",
+    "redirecting": "Redirection…",
+    "dashboardTitle": "Tableau de bord",
+    "dashboardWelcome": "Vous êtes connecté. La gestion des scans arrivera ici.",
+    "signOut": "Se déconnecter",
+    "comingSoon": "L'authentification arrive bientôt. Inscrivez-vous pour être notifié au lancement.",
+    "errors": {
+      "emailAlreadyInUse": "Un compte existe déjà avec cet e-mail. Connectez-vous plutôt.",
+      "weakPassword": "Utilisez au moins 8 caractères avec majuscule, minuscule et un chiffre.",
+      "passwordRequired": "Saisissez votre mot de passe.",
+      "passwordMismatch": "Les mots de passe ne correspondent pas.",
+      "wrongPassword": "E-mail ou mot de passe incorrect.",
+      "userNotFound": "E-mail ou mot de passe incorrect.",
+      "invalidEmail": "Saisissez une adresse e-mail valide.",
+      "tooManyRequests": "Trop de tentatives. Veuillez attendre {seconds} secondes avant de réessayer.",
+      "accountExistsWithDifferentCredential": "Cet e-mail est déjà enregistré avec une autre méthode. Connectez-vous avec votre méthode d'origine (e-mail/mot de passe).",
+      "popupClosedByUser": "La connexion Google a été annulée.",
+      "popupBlocked": "Votre navigateur a bloqué la fenêtre de connexion. Autorisez les pop-ups pour ce site.",
+      "networkRequestFailed": "Erreur réseau. Vérifiez votre connexion et réessayez.",
+      "requiresRecentLogin": "Pour votre sécurité, reconnectez-vous avant de continuer.",
+      "invalidCredential": "E-mail ou mot de passe incorrect.",
+      "operationNotAllowed": "Cette méthode de connexion est désactivée. Contactez le support.",
+      "userDisabled": "Ce compte a été désactivé. Contactez le support.",
+      "unauthorizedDomain": "Ce domaine n’est pas autorisé dans Firebase. Ajoutez localhost dans Authentication → Settings → Authorized domains.",
+      "authInternalError": "Échec de la connexion Google (pop-up bloquée, cookies tiers désactivés ou extension). Autorisez les pop-ups ou essayez un autre navigateur.",
+      "generic": "Une erreur s'est produite. Veuillez réessayer."
+    }
+  },
+  "legal": {
+    "termsTitle": "Conditions d'utilisation",
+    "privacyTitle": "Politique de confidentialité",
+    "placeholder": "Texte légal à rédiger avant le lancement en production."
+  }
+}

@@ -7,12 +7,8 @@ import logging
 from typing import Any
 
 from agents.state import ScanState
-from tools.base import (
-    BinaryValidationError,
-    ScopeViolationError,
-    ToolExecutionError,
-    ToolResult,
-)
+from core.toolchain import run_tool_safely
+from tools.base import ToolResult
 from tools.firecrawl_tool import FirecrawlTool
 from tools.httpx_tool import HttpxTool
 from tools.katana_tool import KatanaTool
@@ -48,36 +44,6 @@ def _dedupe_endpoints(endpoints: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return result
 
 
-async def _run_tool_safely(
-    tool_name: str,
-    coro: Any,
-) -> tuple[str, ToolResult | None, str | None]:
-    """
-    Run a tool coroutine with comprehensive error handling.
-
-    Returns:
-        Tuple of (tool_name, result_or_none, error_message_or_none)
-    """
-    try:
-        result = await coro
-        return (tool_name, result, None)
-    except ScopeViolationError as e:
-        logger.error(f"{tool_name}: Scope violation - {e}")
-        return (tool_name, None, f"Scope violation: {e}")
-    except BinaryValidationError as e:
-        logger.error(f"{tool_name}: Binary validation failed - {e}")
-        return (tool_name, None, f"Binary validation failed: {e}")
-    except ToolExecutionError as e:
-        logger.error(f"{tool_name}: Execution error - {e}")
-        return (tool_name, None, f"Execution error: {e}")
-    except asyncio.CancelledError:
-        logger.warning(f"{tool_name}: Cancelled")
-        return (tool_name, None, "Cancelled")
-    except Exception as e:
-        logger.exception(f"{tool_name}: Unexpected error - {e}")
-        return (tool_name, None, f"Unexpected error: {type(e).__name__}: {e}")
-
-
 async def run_recon_async(state: ScanState) -> dict[str, Any]:
     """
     Execute reconnaissance tools in parallel and merge results.
@@ -105,10 +71,10 @@ async def run_recon_async(state: ScanState) -> dict[str, Any]:
     firecrawl = FirecrawlTool()
 
     tasks = [
-        _run_tool_safely("subfinder", subfinder.run(target, scope)),
-        _run_tool_safely("httpx", httpx.run(target, {"targets": [target]})),
-        _run_tool_safely("katana", katana.run(target, scope)),
-        _run_tool_safely("firecrawl", firecrawl.run(target, scope)),
+        run_tool_safely("subfinder", lambda: subfinder.run(target, scope)),
+        run_tool_safely("httpx", lambda: httpx.run(target, {"targets": [target]})),
+        run_tool_safely("katana", lambda: katana.run(target, scope)),
+        run_tool_safely("firecrawl", lambda: firecrawl.run(target, scope)),
     ]
     total_tools = len(tasks)
 

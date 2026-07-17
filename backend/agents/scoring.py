@@ -147,6 +147,7 @@ def run_scoring(state: ScanState) -> dict[str, Any]:
 
         verification = finding.get("verification") or {}
         fid = str(finding.get("id") or f"{finding.get('tool', 'finding')}-{idx}")
+        finding["id"] = fid
         finding_scores[fid] = {
             "severity": severity,
             "score": score,
@@ -164,12 +165,57 @@ def run_scoring(state: ScanState) -> dict[str, Any]:
         reverse=True,
     )
 
+    recon = state.get("recon_results") or {}
+    recon_modules = sorted(recon.get("tool_results", {}).keys())
+    detection_meta = state.get("detection_metadata") or {}
+    detection_errors = detection_meta.get("errors") or {}
+    modules_na = set(detection_meta.get("modules_not_applicable") or [])
+    passive_modules = ["nuclei", "testssl", "retirejs", "header-checks"]
+    detection_modules = [
+        m for m in passive_modules
+        if m not in detection_errors and m not in modules_na
+    ]
+    if detection_meta.get("active_tools_run"):
+        detection_modules.extend(["zap", "sqlmap"])
+
+    modules_failed = sorted(
+        k for k in detection_errors.keys()
+        if not k.startswith("active_")
+    )
+    active_failed = sorted(
+        k.removeprefix("active_")
+        for k in detection_errors.keys()
+        if k.startswith("active_")
+    )
+    modules_failed_all = modules_failed + active_failed
+
     total_findings = len(findings)
     if total_findings == 0:
         overall_risk = 0.0
     else:
         max_weighted = total_findings * _RISK_WEIGHTS["critical"]
         overall_risk = round((weighted_sum / max_weighted) * 10.0, 2)
+
+    # A partially failed scan should never look "safer" than a clean full-coverage
+    # scan purely because fewer modules executed.
+    if modules_failed_all:
+        coverage_penalty = min(2.0, 0.5 * len(modules_failed_all))
+        overall_risk = round(max(overall_risk, coverage_penalty), 2)
+
+    scan_coverage = {
+        "recon_modules_run": recon_modules,
+        "detection_modules_run": detection_modules,
+        "recon_partial_failure": bool(recon.get("partial_failure")),
+        "modules_failed": modules_failed_all,
+        "modules_not_applicable": sorted(modules_na),
+        # Backward-compatible alias — only real failures, not intentional N/A.
+        "modules_skipped": modules_failed_all,
+        "score_basis": (
+            "Score reflects findings from modules that executed successfully. "
+            "modules_not_applicable lists tools that had nothing to scan; "
+            "modules_failed lists tools that exhausted retries."
+        ),
+    }
 
     return {
         "findings": findings,
@@ -179,6 +225,7 @@ def run_scoring(state: ScanState) -> dict[str, Any]:
             "total_findings": total_findings,
             "likely_false_positives": likely_false_positives,
             "per_finding": finding_scores,
+            "scan_coverage": scan_coverage,
         },
         "status": "scored",
     }

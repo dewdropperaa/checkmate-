@@ -24,6 +24,10 @@ class JsonFormatter(logging.Formatter):
             "message": record.getMessage(),
             "request_id": request_id_var.get() or None,
         }
+        for key in ("scan_id", "target", "node", "event", "client_id", "error_code"):
+            value = getattr(record, key, None)
+            if value is not None:
+                payload[key] = value
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
         return json.dumps(payload, default=str)
@@ -56,5 +60,18 @@ def get_request_id() -> str:
 def log_node_transition(scan_id: str, node: str, **fields: Any) -> None:
     """Emit structured log for LangGraph node transitions."""
     logger = logging.getLogger("agents.orchestrator")
-    payload = {"scan_id": scan_id, "node": node, "event": "node_transition", **fields}
-    logger.info("node_transition %s", json.dumps(payload, default=str))
+    extra = {"scan_id": scan_id, "node": node, "event": "node_transition", **fields}
+    logger.info("node_transition %s", json.dumps(extra, default=str), extra=extra)
+
+
+def log_scan_event(
+    scan_id: str,
+    event: str,
+    *,
+    level: int = logging.INFO,
+    **fields: Any,
+) -> None:
+    """Emit a structured scan lifecycle event suitable for alerting."""
+    logger = logging.getLogger("scan.lifecycle")
+    extra = {"scan_id": scan_id, "event": event, **fields}
+    logger.log(level, "scan_event %s", json.dumps(extra, default=str), extra=extra)

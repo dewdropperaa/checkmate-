@@ -4,6 +4,16 @@ type ApiResponse<T = unknown> = {
   data: T;
 };
 
+type PendingInterrupt = {
+  node?: string;
+  value?: {
+    scan_id?: string;
+    target?: string;
+    planned_active_tests?: string[];
+    message?: string;
+  };
+};
+
 type ScanStatusData = {
   scan_id?: string;
   target?: string;
@@ -12,9 +22,16 @@ type ScanStatusData = {
   next_nodes?: string[];
   human_approval_needed?: boolean;
   human_approved?: boolean;
-  pending_interrupt?: unknown | null;
+  approved_tools?: string[];
+  rejected_tools?: string[];
+  pending_interrupt?: PendingInterrupt | null;
   findings_count?: number;
   is_complete?: boolean;
+};
+
+const TOOL_DESCRIPTIONS: Record<string, string> = {
+  sqlmap: "SQL injection scanner (parameterized URLs only)",
+  zap: "OWASP ZAP active vulnerability scanner",
 };
 
 type ReportSeverityData = {
@@ -33,10 +50,12 @@ const findingsCountEl = document.getElementById("findings-count") as HTMLElement
 const summarySectionEl = document.getElementById("summary-section") as HTMLDivElement;
 const severitySummaryEl = document.getElementById("severity-summary") as HTMLUListElement;
 const reportBtn = document.getElementById("report-btn") as HTMLButtonElement;
+const downloadPdfBtn = document.getElementById("download-pdf-btn") as HTMLButtonElement;
 const openOptionsBtn = document.getElementById("open-options") as HTMLButtonElement;
 const approvalModalEl = document.getElementById("approval-modal") as HTMLDivElement;
 const approvalTextEl = document.getElementById("approval-text") as HTMLParagraphElement;
 const approvalErrorEl = document.getElementById("approval-error") as HTMLParagraphElement;
+const toolChecklistEl = document.getElementById("tool-checklist") as HTMLUListElement;
 const approveBtn = document.getElementById("approve-btn") as HTMLButtonElement;
 const rejectBtn = document.getElementById("reject-btn") as HTMLButtonElement;
 
@@ -45,8 +64,14 @@ let baseBackendUrl = "";
 let activeTarget = "";
 let activeScanId = "";
 let currentReportUrl = "";
+let currentPdfUrl = "";
 let approvalActionPending = false;
 let approvalShown = false;
+let autoApproveTimer: number | undefined;
+let plannedActiveTests: string[] = [];
+let selectedTools = new Set<string>();
+
+const AUTO_APPROVE_SECONDS = 8;
 
 function sendMessage<T>(message: unknown): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -95,6 +120,13 @@ function setScanStatus(text: string, muted = false): void {
   scanStatusEl.classList.toggle("muted", muted);
 }
 
+function clearAutoApproveTimer(): void {
+  if (autoApproveTimer !== undefined) {
+    window.clearTimeout(autoApproveTimer);
+    autoApproveTimer = undefined;
+  }
+}
+
 function clearPolling(): void {
   if (pollTimer !== undefined) {
     window.clearInterval(pollTimer);
@@ -108,9 +140,50 @@ function renderSeveritySummary(severityMap: Record<string, number>): void {
   for (const key of orderedKeys) {
     const count = severityMap[key] ?? 0;
     const item = document.createElement("li");
+    item.dataset.severity = key;
     item.innerHTML = `<span>${key.toUpperCase()}</span><strong>${count}</strong>`;
     severitySummaryEl.appendChild(item);
   }
+}
+
+function updateApproveButtonState(): void {
+  approveBtn.disabled = approvalActionPending || selectedTools.size === 0;
+}
+
+function renderToolChecklist(tools: string[]): void {
+  toolChecklistEl.innerHTML = "";
+  for (const tool of tools) {
+    const item = document.createElement("li");
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.id = `tool-${tool}`;
+    checkbox.checked = selectedTools.has(tool);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) {
+        selectedTools.add(tool);
+      } else {
+        selectedTools.delete(tool);
+      }
+      updateApproveButtonState();
+    });
+
+    const label = document.createElement("label");
+    label.htmlFor = checkbox.id;
+    const nameEl = document.createElement("span");
+    nameEl.className = "tool-name";
+    nameEl.textContent = tool;
+    const descEl = document.createElement("span");
+    descEl.className = "tool-desc";
+    descEl.textContent = TOOL_DESCRIPTIONS[tool] ?? "Active/intrusive test";
+    label.appendChild(nameEl);
+    label.appendChild(descEl);
+
+    item.appendChild(checkbox);
+    item.appendChild(label);
+    toolChecklistEl.appendChild(item);
+  }
+  updateApproveButtonState();
 }
 
 async function openReport(): Promise<void> {
@@ -118,6 +191,13 @@ async function openReport(): Promise<void> {
     return;
   }
   await chrome.tabs.create({ url: currentReportUrl });
+}
+
+async function downloadPdf(): Promise<void> {
+  if (!currentPdfUrl) {
+    return;
+  }
+  await chrome.tabs.create({ url: currentPdfUrl });
 }
 
 async function loadSeveritySummary(): Promise<void> {
@@ -135,30 +215,44 @@ async function loadSeveritySummary(): Promise<void> {
   summarySectionEl.hidden = false;
 }
 
-async function sendApproval(approved: boolean): Promise<void> {
+async function sendApproval(approvedTools: string[]): Promise<void> {
   if (!activeScanId || approvalActionPending) {
     return;
   }
   approvalActionPending = true;
   approvalErrorEl.hidden = true;
+  clearAutoApproveTimer();
+
+  const approved = approvedTools.length > 0;
+
+  // Give immediate feedback: the backend resumes the scan in the background,
+  // so hide the dialog right away and show an analyzing state instead of
+  // leaving the modal frozen while the request is in flight.
+  approveBtn.disabled = true;
+  rejectBtn.disabled = true;
+  approvalModalEl.hidden = true;
+  setScanStatus(
+    approved
+      ? `Running approved tests: ${approvedTools.join(", ")}...`
+      : "All active tests rejected. Finishing up...",
+    false,
+  );
 
   try {
     const response = await apiRequest({
       path: `/scan/${encodeURIComponent(activeScanId)}/approve`,
       method: "POST",
-      body: { approved },
+      body: { approved, approved_tools: approvedTools },
     });
 
     if (!response.ok) {
       throw new Error(`Approval request failed (${response.status})`);
     }
-
-    approvalModalEl.hidden = true;
-    setScanStatus(
-      approved ? "Active tests approved. Scan continuing..." : "Active tests rejected.",
-      false,
-    );
   } catch (error) {
+    // Re-open the dialog so the user can retry the decision.
+    approvalModalEl.hidden = false;
+    rejectBtn.disabled = false;
+    updateApproveButtonState();
     approvalErrorEl.textContent = String(error);
     approvalErrorEl.hidden = false;
   } finally {
@@ -166,6 +260,25 @@ async function sendApproval(approved: boolean): Promise<void> {
   }
 }
 
+function scheduleAutoApprove(): void {
+  clearAutoApproveTimer();
+  let remaining = AUTO_APPROVE_SECONDS;
+  const updateCountdown = (): void => {
+    approvalTextEl.textContent =
+      `This scan wants to run active tests against ${activeTarget}. ` +
+      `Auto-approving the checked tools in ${remaining}s unless you change the selection or reject.`;
+  };
+  updateCountdown();
+  autoApproveTimer = window.setInterval(() => {
+    remaining -= 1;
+    if (remaining <= 0) {
+      clearAutoApproveTimer();
+      void sendApproval(Array.from(selectedTools));
+      return;
+    }
+    updateCountdown();
+  }, 1000);
+}
 let statusRetryCount = 0;
 const MAX_STATUS_RETRIES = 5;
 
@@ -227,18 +340,29 @@ async function pollScanStatus(): Promise<void> {
 
   if (awaitingApproval && !data.is_complete && !approvalShown) {
     approvalShown = true;
+    plannedActiveTests = data.pending_interrupt?.value?.planned_active_tests ?? [];
+    selectedTools = new Set(plannedActiveTests);
     approvalTextEl.textContent =
-      `This scan wants to run active tests (sqlmap / ZAP active scan) against ` +
-      `${activeTarget}. Approve?`;
+      data.pending_interrupt?.value?.message ??
+      `This scan wants to run active tests against ${activeTarget}. ` +
+        `Pick which tools to allow, then approve.`;
+    renderToolChecklist(plannedActiveTests);
+    approveBtn.disabled = false;
+    rejectBtn.disabled = false;
     approvalModalEl.hidden = false;
+    updateApproveButtonState();
+    scheduleAutoApprove();
   }
 
   if (data.is_complete) {
     clearPolling();
+    clearAutoApproveTimer();
     scanBtn.disabled = false;
     approvalModalEl.hidden = true;
     currentReportUrl = `${baseBackendUrl}/scan/${encodeURIComponent(activeScanId)}/report/html`;
+    currentPdfUrl = `${baseBackendUrl}/scan/${encodeURIComponent(activeScanId)}/report/pdf`;
     reportBtn.hidden = false;
+    downloadPdfBtn.hidden = false;
     await loadSeveritySummary().catch(() => undefined);
     setScanStatus(`Scan complete (${status}).`, false);
   }
@@ -252,14 +376,19 @@ async function startScan(): Promise<void> {
 
   try {
     clearPolling();
+    clearAutoApproveTimer();
     approvalShown = false;
+    plannedActiveTests = [];
+    selectedTools = new Set();
     activeScanId = "";
     currentReportUrl = "";
+    currentPdfUrl = "";
     statusRetryCount = 0;
     scanBtn.disabled = true;
     liveSectionEl.hidden = true;
     summarySectionEl.hidden = true;
     reportBtn.hidden = true;
+    downloadPdfBtn.hidden = true;
     approvalModalEl.hidden = true;
     setScanStatus("Submitting scan request...", true);
 
@@ -353,15 +482,22 @@ async function init(): Promise<void> {
 }
 
 approveBtn.addEventListener("click", () => {
-  void sendApproval(true);
+  clearAutoApproveTimer();
+  void sendApproval(Array.from(selectedTools));
 });
 
 rejectBtn.addEventListener("click", () => {
-  void sendApproval(false);
+  clearAutoApproveTimer();
+  selectedTools.clear();
+  void sendApproval([]);
 });
 
 reportBtn.addEventListener("click", () => {
   void openReport();
+});
+
+downloadPdfBtn.addEventListener("click", () => {
+  void downloadPdf();
 });
 
 openOptionsBtn.addEventListener("click", () => {
@@ -370,6 +506,7 @@ openOptionsBtn.addEventListener("click", () => {
 
 window.addEventListener("beforeunload", () => {
   clearPolling();
+  clearAutoApproveTimer();
 });
 
 void init().catch((err) => {

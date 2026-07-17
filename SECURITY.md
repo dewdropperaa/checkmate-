@@ -2,7 +2,7 @@
 
 ## Authorized use only
 
-**Sentinel Scan must only be used against targets you own or have explicit, written authorization to test.**
+**checkmate must only be used against targets you own or have explicit, written authorization to test.**
 
 Unauthorized scanning may violate computer fraud and abuse laws, service terms, and organizational policy. Operators are solely responsible for ensuring they have proper authorization before queuing any scan.
 
@@ -50,7 +50,7 @@ No broad `<all_urls>` host permission is requested. Content scripts match `http`
 
 ## Reporting vulnerabilities
 
-If you discover a security issue in Sentinel Scan itself, report it privately to the project maintainers. Do not disclose publicly until a fix is available.
+If you discover a security issue in checkmate itself, report it privately to the project maintainers. Do not disclose publicly until a fix is available.
 
 ## Roadmap security notes
 

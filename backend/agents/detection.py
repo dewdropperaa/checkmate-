@@ -8,9 +8,14 @@ Passive tools (run automatically after recon):
 - retire.js: JavaScript dependency CVE scanner
 - header-checks: HTTP security header analyzer
 
-Active tools (require human_approved=True):
+Active tools (require per-tool human approval):
 - zap: OWASP ZAP active scanner
 - sqlmap: SQL injection scanner
+
+Each active tool only runs if it's individually present in
+ScanState.approved_tools; a reviewer may approve sqlmap while rejecting zap
+(or vice versa). See `_resolve_active_tool_selection` for the resolution
+logic and its legacy `human_approved` fallback.
 
 All findings are normalized to a common schema and deduplicated
 before being written to ScanState.findings.
@@ -24,12 +29,8 @@ from typing import Any
 from urllib.parse import urlparse
 
 from agents.state import ScanState
-from tools.base import (
-    BinaryValidationError,
-    ScopeViolationError,
-    ToolExecutionError,
-    ToolResult,
-)
+from core.toolchain import run_tool_safely
+from tools.base import ToolResult
 from tools.header_checks import HeaderChecker
 from tools.nuclei_tool import NucleiTool
 from tools.retirejs_tool import RetireJSTool
@@ -40,35 +41,28 @@ from tools.zap_tool import ZAPTool
 
 logger = logging.getLogger(__name__)
 
+# Fallback set of active tools for states that predate per-tool planning
+# (e.g. hand-built ScanState dicts in tests/older callers that never set
+# `planned_active_tests`).
+_DEFAULT_ACTIVE_TOOLS = ("zap", "sqlmap")
 
-async def _run_tool_safely(
-    tool_name: str,
-    coro: Any,
-) -> tuple[str, ToolResult | None, str | None]:
-    """
-    Run a tool coroutine with comprehensive error handling.
 
-    Returns:
-        Tuple of (tool_name, result_or_none, error_message_or_none)
+def _resolve_active_tool_selection(state: ScanState) -> tuple[list[str], list[str]]:
+    """Determine which planned active tools a human reviewer approved.
+
+    Returns `(approved_tools, rejected_tools)`, both ordered the same as
+    `planned_active_tests`. When a state predates per-tool gating (no
+    `approved_tools` key at all), this falls back to the legacy all-or-nothing
+    `human_approved` flag so older callers keep working unchanged.
     """
-    try:
-        result = await coro
-        return (tool_name, result, None)
-    except ScopeViolationError as e:
-        logger.error(f"{tool_name}: Scope violation - {e}")
-        return (tool_name, None, f"Scope violation: {e}")
-    except BinaryValidationError as e:
-        logger.error(f"{tool_name}: Binary validation failed - {e}")
-        return (tool_name, None, f"Binary validation failed: {e}")
-    except ToolExecutionError as e:
-        logger.error(f"{tool_name}: Execution error - {e}")
-        return (tool_name, None, f"Execution error: {e}")
-    except asyncio.CancelledError:
-        logger.warning(f"{tool_name}: Cancelled")
-        return (tool_name, None, "Cancelled")
-    except Exception as e:
-        logger.exception(f"{tool_name}: Unexpected error - {e}")
-        return (tool_name, None, f"Unexpected error: {type(e).__name__}: {e}")
+    planned = list(state.get("planned_active_tests") or _DEFAULT_ACTIVE_TOOLS)
+    approved_tools = state.get("approved_tools")
+    if approved_tools is None:
+        approved_tools = planned if state.get("human_approved", False) else []
+    approved_set = set(approved_tools)
+    approved = [tool for tool in planned if tool in approved_set]
+    rejected = [tool for tool in planned if tool not in approved_set]
+    return approved, rejected
 
 
 def _extract_findings_from_result(result: ToolResult) -> list[Finding]:
@@ -153,27 +147,29 @@ async def run_passive_tools(state: ScanState) -> tuple[list[Finding], dict[str, 
 
     tasks = []
 
-    tasks.append(_run_tool_safely(
+    tasks.append(run_tool_safely(
         "nuclei",
-        nuclei.run_batch(scan_urls[:50], {}),
+        lambda: nuclei.run_batch(scan_urls[:50], {}),
     ))
 
     if https_hosts:
-        tasks.append(_run_tool_safely(
+        tasks.append(run_tool_safely(
             "testssl",
-            testssl.run(https_hosts[0], {}),
+            lambda: testssl.run(https_hosts[0], {}),
         ))
 
     if js_files:
-        tasks.append(_run_tool_safely(
+        tasks.append(run_tool_safely(
             "retirejs",
-            retirejs.run_batch(js_files[:20], {}),
+            lambda: retirejs.run_batch(js_files[:20], {}),
         ))
+    else:
+        logger.info("retirejs: not applicable (no JavaScript files discovered)")
 
     check_urls = scan_urls[:10] if scan_urls else [ensure_https_url(target)]
-    tasks.append(_run_tool_safely(
+    tasks.append(run_tool_safely(
         "header-checks",
-        header_checker.run_batch(check_urls, {}),
+        lambda: header_checker.run_batch(check_urls, {}),
     ))
 
     logger.info(f"Running {len(tasks)} passive detection tools")
@@ -204,10 +200,11 @@ async def run_passive_tools(state: ScanState) -> tuple[list[Finding], dict[str, 
 
 async def run_active_tools(state: ScanState) -> tuple[list[Finding], dict[str, str]]:
     """
-    Run active detection tools (requires human approval).
+    Run active detection tools that the human reviewer approved.
 
-    Active tools perform intrusive testing and should only run
-    when state.human_approved is True.
+    Active tools perform intrusive testing and only run per-tool once a
+    human reviewer approves them individually (e.g. approve sqlmap while
+    rejecting zap). See `_resolve_active_tool_selection`.
 
     They include:
     - zap: OWASP ZAP active scanner
@@ -221,6 +218,11 @@ async def run_active_tools(state: ScanState) -> tuple[list[Finding], dict[str, s
     """
     target = state["target"]
     recon_results = state.get("recon_results", {})
+    approved_tools, rejected_tools = _resolve_active_tool_selection(state)
+    approved = set(approved_tools)
+
+    if rejected_tools:
+        logger.info(f"Active tools rejected by reviewer, skipping: {rejected_tools}")
 
     zap = ZAPTool()
     sqlmap = SQLMapTool()
@@ -228,24 +230,26 @@ async def run_active_tools(state: ScanState) -> tuple[list[Finding], dict[str, s
     tasks = []
 
     target_url = f"https://{target}" if not target.startswith("http") else target
-    tasks.append(_run_tool_safely(
-        "zap",
-        zap.run(target_url, {}),
-    ))
-
-    injectable_urls = find_injectable_urls(recon_results)
-    if injectable_urls:
-        logger.info(f"Found {len(injectable_urls)} URLs for SQLMap testing")
-        tasks.append(_run_tool_safely(
-            "sqlmap",
-            sqlmap.run_batch(injectable_urls[:10], {"level": 1, "risk": 1}),
+    if "zap" in approved:
+        tasks.append(run_tool_safely(
+            "zap",
+            lambda: zap.run(target_url, {}),
         ))
-    else:
-        logger.info("No parameterized URLs found for SQLMap testing")
 
-    logger.info(f"Running {len(tasks)} active detection tools")
+    if "sqlmap" in approved:
+        injectable_urls = find_injectable_urls(recon_results)
+        if injectable_urls:
+            logger.info(f"Found {len(injectable_urls)} URLs for SQLMap testing")
+            tasks.append(run_tool_safely(
+                "sqlmap",
+                lambda: sqlmap.run_batch(injectable_urls[:10], {"level": 1, "risk": 1}),
+            ))
+        else:
+            logger.info("sqlmap: not applicable (no parameterized URLs discovered)")
 
-    results = await asyncio.gather(*tasks, return_exceptions=False)
+    logger.info(f"Running {len(tasks)} active detection tools (approved: {sorted(approved)})")
+
+    results = await asyncio.gather(*tasks, return_exceptions=False) if tasks else []
 
     await zap.close()
 
@@ -269,6 +273,106 @@ async def run_active_tools(state: ScanState) -> tuple[list[Finding], dict[str, s
     return all_findings, errors
 
 
+async def run_passive_detection_async(state: ScanState) -> dict[str, Any]:
+    """Run passive detection tools and merge findings into scan state."""
+    target = state["target"]
+    logger.info(f"Starting passive detection for target: {target}")
+
+    passive_findings, passive_errors = await run_passive_tools(state)
+    deduplicated = deduplicate_findings(passive_findings)
+
+    modules_na: list[str] = []
+    recon_results = state.get("recon_results", {})
+    if not recon_results.get("js_files"):
+        modules_na.append("retirejs")
+
+    existing_findings = state.get("findings", [])
+    existing_keys = {
+        (ef.get("url", ""), ef.get("type", "")) for ef in existing_findings
+    }
+    new_findings = [
+        finding.model_dump_for_state()
+        for finding in deduplicated
+        if finding.dedup_key() not in existing_keys
+    ]
+
+    prior_meta = dict(state.get("detection_metadata") or {})
+    prior_errors = dict(prior_meta.get("errors") or {})
+    prior_errors.update(passive_errors)
+
+    return {
+        "findings": existing_findings + new_findings,
+        "status": "detecting",
+        "detection_metadata": {
+            **prior_meta,
+            "passive_count": len(passive_findings),
+            "passive_deduplicated_count": len(deduplicated),
+            "passive_new_findings_count": len(new_findings),
+            "errors": prior_errors or None,
+            "passive_tools_run": True,
+            "modules_not_applicable": modules_na or None,
+        },
+    }
+
+
+async def run_active_detection_async(state: ScanState) -> dict[str, Any]:
+    """Run whichever active detection tools the human reviewer approved."""
+    approved_tools, rejected_tools = _resolve_active_tool_selection(state)
+    if not approved_tools:
+        logger.info("Active tools skipped - no tools approved by reviewer")
+        prior_meta = dict(state.get("detection_metadata") or {})
+        return {
+            "status": "detecting",
+            "detection_metadata": {
+                **prior_meta,
+                "active_count": 0,
+                "active_tools_run": False,
+                "approved_tools": [],
+                "rejected_tools": rejected_tools,
+            },
+        }
+
+    target = state["target"]
+    logger.info(
+        f"Starting active detection for target: {target} "
+        f"(approved tools: {approved_tools}, rejected: {rejected_tools})"
+    )
+
+    active_findings, active_errors = await run_active_tools(state)
+    all_findings = list(state.get("findings", [])) + [
+        f.model_dump_for_state() for f in active_findings
+    ]
+    deduplicated = deduplicate_findings([
+        Finding(**f) if isinstance(f, dict) else f for f in all_findings
+    ])
+
+    existing_keys: set[tuple[str, str]] = set()
+    merged: list[dict[str, Any]] = []
+    for finding in deduplicated:
+        key = finding.dedup_key()
+        if key not in existing_keys:
+            existing_keys.add(key)
+            merged.append(finding.model_dump_for_state())
+
+    prior_meta = dict(state.get("detection_metadata") or {})
+    prior_errors = dict(prior_meta.get("errors") or {})
+    prior_errors.update({f"active_{k}": v for k, v in active_errors.items()})
+
+    return {
+        "findings": merged,
+        "status": "detecting",
+        "detection_metadata": {
+            **prior_meta,
+            "active_count": len(active_findings),
+            "deduplicated_count": len(deduplicated),
+            "errors": prior_errors or None,
+            "active_tools_run": True,
+            "approved_tools": approved_tools,
+            "rejected_tools": rejected_tools,
+        },
+    }
+
+
 async def run_detection_async(state: ScanState) -> dict[str, Any]:
     """
     Execute detection tools and collect findings.
@@ -286,10 +390,10 @@ async def run_detection_async(state: ScanState) -> dict[str, Any]:
         Dict with findings and status to merge into ScanState
     """
     target = state["target"]
-    human_approved = state.get("human_approved", False)
+    approved_tools, rejected_tools = _resolve_active_tool_selection(state)
 
     logger.info(f"Starting detection for target: {target}")
-    logger.info(f"Human approval status: {human_approved}")
+    logger.info(f"Approved tools: {approved_tools}, rejected tools: {rejected_tools}")
 
     all_findings: list[Finding] = []
     all_errors: dict[str, str] = {}
@@ -300,15 +404,15 @@ async def run_detection_async(state: ScanState) -> dict[str, Any]:
 
     logger.info(f"Passive tools completed: {len(passive_findings)} findings")
 
-    if human_approved:
-        logger.info("Human approved - running active tools")
+    if approved_tools:
+        logger.info(f"Running approved active tools: {approved_tools}")
         active_findings, active_errors = await run_active_tools(state)
         all_findings.extend(active_findings)
         all_errors.update({f"active_{k}": v for k, v in active_errors.items()})
 
         logger.info(f"Active tools completed: {len(active_findings)} findings")
     else:
-        logger.info("Active tools skipped - no human approval")
+        logger.info("Active tools skipped - no tools approved by reviewer")
 
     deduplicated = deduplicate_findings(all_findings)
     logger.info(
@@ -332,13 +436,15 @@ async def run_detection_async(state: ScanState) -> dict[str, Any]:
     return {
         "findings": merged_findings,
         "status": "detecting",
-        "_detection_metadata": {
+        "detection_metadata": {
             "passive_count": len(passive_findings),
-            "active_count": len(all_findings) - len(passive_findings) if human_approved else 0,
+            "active_count": len(all_findings) - len(passive_findings) if approved_tools else 0,
             "deduplicated_count": len(deduplicated),
             "new_findings_count": len(new_findings),
             "errors": all_errors if all_errors else None,
-            "active_tools_run": human_approved,
+            "active_tools_run": bool(approved_tools),
+            "approved_tools": approved_tools,
+            "rejected_tools": rejected_tools,
         },
     }
 

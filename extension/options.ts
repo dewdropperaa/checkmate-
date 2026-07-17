@@ -37,7 +37,7 @@ async function apiRequest<T>(payload: {
 
 function setStatus(text: string, error = false): void {
   statusEl.textContent = text;
-  statusEl.style.color = error ? "#b91c1c" : "#334155";
+  statusEl.classList.toggle("status-error", error);
 }
 
 function normalizeTarget(input: string): string {

@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from fastapi import HTTPException, status
 
 from core.config import Settings, get_settings
+from core.ssrf import SSRFError, validate_scan_target
 
 # Toggle: allowlist enforcement is currently disabled so the extension can
 # auto-target the open website. Flip to True (and restore checks below) to
@@ -53,10 +54,19 @@ def is_target_authorized(target: str, settings: Settings | None = None) -> bool:
 
 
 def enforce_scope(target: str, settings: Settings | None = None) -> None:
-    """Raise HTTP 403 if the target is not on the authorized allowlist.
+    """Raise HTTP 403/400 if the target fails SSRF or allowlist checks."""
+    try:
+        validate_scan_target(target)
+    except SSRFError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "invalid_scan_target",
+                "message": str(exc),
+                "target": target,
+            },
+        ) from exc
 
-    Temporarily a no-op (allowlist enforcement disabled). Never raises 403.
-    """
     # Allowlist temporarily disabled — do not raise.
     # To re-enable: restore the is_target_authorized check below.
     _ = target, settings

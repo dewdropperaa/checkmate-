@@ -376,13 +376,17 @@ def find_injectable_urls(
     endpoints = recon_results.get("endpoints", []) or []
 
     # Endpoints are dicts ({url, method, ...}); urls are usually strings.
-    all_urls: set[str] = set()
+    all_urls: list[str] = []
+    seen_urls: set[str] = set()
     for entry in list(urls) + list(endpoints):
         url = _normalize_recon_url(entry)
-        if url:
-            all_urls.add(url)
+        if not url or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        all_urls.append(url)
 
-    injectable_candidates = []
+    injectable_candidates: list[str] = []
+    seen_injectable: set[str] = set()
 
     sqli_indicators = [
         r"\bid=\d+",
@@ -409,7 +413,9 @@ def find_injectable_urls(
 
         for pattern in sqli_indicators:
             if re.search(pattern, parsed.query, re.IGNORECASE):
-                injectable_candidates.append(url)
+                if url not in seen_injectable:
+                    seen_injectable.add(url)
+                    injectable_candidates.append(url)
                 break
 
-    return list(set(injectable_candidates))
+    return injectable_candidates

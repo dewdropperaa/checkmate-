@@ -119,18 +119,16 @@ class KatanaTool(BaseSecurityTool):
 
         args = [
             "-u", target,
-            "-json",
+            "-jsonl",
             "-silent",
+            "-no-color",
             "-depth", str(max_depth),
             "-crawl-duration", "60",
             "-rate-limit", str(rate_limit),
-            "-field", "url,path,method,status_code",
-            "-no-scope",
-            "-crawl-scope", parsed.hostname or target,
         ]
 
         if max_pages > 0:
-            args.extend(["-field-limit", str(max_pages)])
+            args.extend(["-max-domain-pages", str(max_pages)])
 
         exit_code, stdout, stderr, timed_out = await run_subprocess_safely(
             binary_path=binary_path,
@@ -158,16 +156,18 @@ class KatanaTool(BaseSecurityTool):
         seen_urls = set()
 
         for item in raw_results:
-            url = item.get("request", {}).get("endpoint", "") or item.get("url", "")
+            request = item.get("request") if isinstance(item.get("request"), dict) else {}
+            response = item.get("response") if isinstance(item.get("response"), dict) else {}
+            url = request.get("endpoint", "") or item.get("url", "")
             if not url or url in seen_urls:
                 continue
             seen_urls.add(url)
 
             endpoint_info = {
                 "url": url,
-                "path": item.get("path", ""),
-                "method": item.get("method", "GET"),
-                "status_code": item.get("status_code", 0),
+                "path": urlparse(url).path or item.get("path", ""),
+                "method": request.get("method", item.get("method", "GET")),
+                "status_code": response.get("status_code", item.get("status_code", 0)),
             }
 
             urls.append(url)

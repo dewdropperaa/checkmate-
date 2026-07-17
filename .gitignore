@@ -2,6 +2,10 @@
 .env
 backend/.env
 
+# Firebase Admin service-account keys (never commit)
+*-firebase-adminsdk-*.json
+backend/secrets/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -19,6 +23,11 @@ extension/dist/
 # Checkpoint database (sqlite)
 backend/data/
 backend/reports/
+
+# Local scanner binaries (install via scripts/install_tools.sh)
+backend/tools-bin/*
+!backend/tools-bin/.gitkeep
+backend/tools-bin/testssl-repo/
 
 # OS
 .DS_Store

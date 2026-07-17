@@ -3,107 +3,340 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Sentinel Scan Options</title>
+    <title>checkmate Options</title>
     <style>
+      :root {
+        --bg: #0a0d0b;
+        --panel: #0e1310;
+        --panel-alt: #0c1512;
+        --border: #1c2b22;
+        --border-bright: #2b4534;
+        --fg: #cbd8cf;
+        --fg-dim: #6e8478;
+        --fg-faint: #47594e;
+        --accent: #3ddc84;
+        --accent-bright: #7dffb0;
+        --accent-ink: #06170e;
+        --amber: #ffb454;
+        --red: #ff5d5d;
+        --mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Consolas,
+          "Liberation Mono", "SFMono-Regular", Menlo, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        min-height: 100%;
+      }
+
       body {
         margin: 0;
-        background: #f8fafc;
-        color: #0f172a;
-        font-family: "Segoe UI", system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: var(--mono);
+        position: relative;
       }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 50;
+        background-image: repeating-linear-gradient(
+          rgba(255, 255, 255, 0.024) 0px,
+          rgba(255, 255, 255, 0.024) 1px,
+          transparent 1px,
+          transparent 3px
+        );
+        mix-blend-mode: overlay;
+        opacity: 0.5;
+      }
+
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 49;
+        background: radial-gradient(
+          ellipse at 50% -10%,
+          rgba(61, 220, 132, 0.08),
+          transparent 55%
+        );
+      }
+
+      .titlebar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 20px;
+        background: var(--panel-alt);
+        border-bottom: 1px solid var(--border);
+      }
+
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
+
+      .dot.red {
+        background: #ff5f56;
+      }
+
+      .dot.amber {
+        background: #ffbd2e;
+      }
+
+      .dot.green {
+        background: #27c93f;
+      }
+
+      .titlebar-label {
+        flex: 1;
+        text-align: center;
+        font-size: 0.72rem;
+        letter-spacing: 0.06em;
+        color: var(--fg-faint);
+      }
+
       .container {
-        max-width: 780px;
+        max-width: 720px;
         margin: 0 auto;
-        padding: 24px 20px 40px;
+        padding: 32px 20px 56px;
+        position: relative;
       }
+
       h1 {
-        margin: 0 0 8px;
-        font-size: 1.4rem;
+        margin: 0 0 6px;
+        font-size: 1.15rem;
+        letter-spacing: 0.01em;
+        color: var(--accent-bright);
+        font-weight: 600;
       }
+
+      h1::before {
+        content: "# ";
+        color: var(--fg-faint);
+      }
+
       .subtle {
-        margin: 0 0 18px;
-        color: #475569;
+        margin: 0 0 26px;
+        color: var(--fg-dim);
+        font-size: 0.82rem;
       }
+
+      .subtle::before {
+        content: "// ";
+        color: var(--fg-faint);
+      }
+
       .card {
-        background: #ffffff;
-        border: 1px solid #cbd5e1;
-        border-radius: 10px;
-        padding: 16px;
-        margin-bottom: 16px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 0;
+        padding: 18px 18px 20px;
+        margin-bottom: 20px;
+        position: relative;
       }
+
+      .card h2 {
+        margin: 0 0 14px;
+        font-size: 0.72rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--fg-dim);
+        font-weight: 600;
+      }
+
+      .card h2::before {
+        content: "// ";
+        color: var(--fg-faint);
+      }
+
       label {
         display: block;
         margin: 0 0 6px;
-        font-size: 0.85rem;
-        color: #334155;
+        font-size: 0.74rem;
+        color: var(--fg-dim);
       }
+
       input {
         width: 100%;
         box-sizing: border-box;
-        padding: 10px;
-        border-radius: 8px;
-        border: 1px solid #cbd5e1;
-        margin-bottom: 12px;
+        padding: 9px 10px;
+        border-radius: 0;
+        border: 1px solid var(--border-bright);
+        background: #070a08;
+        color: var(--accent-bright);
+        font-family: var(--mono);
+        font-size: 0.82rem;
+        margin-bottom: 14px;
       }
+
+      input::placeholder {
+        color: var(--fg-faint);
+      }
+
+      input:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 1px rgba(61, 220, 132, 0.25);
+      }
+
       button {
-        border: none;
-        border-radius: 8px;
-        padding: 10px 12px;
+        border: 1px solid var(--border-bright);
+        border-radius: 0;
+        background: transparent;
+        color: var(--accent);
+        padding: 9px 14px;
+        font-family: var(--mono);
+        font-size: 0.76rem;
         font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
         cursor: pointer;
+        transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
       }
+
+      button::before {
+        content: "[ ";
+        opacity: 0.55;
+      }
+
+      button::after {
+        content: " ]";
+        opacity: 0.55;
+      }
+
+      button:hover {
+        background: var(--accent);
+        color: var(--accent-ink);
+        border-color: var(--accent);
+      }
+
       .primary {
-        background: #1d4ed8;
-        color: #ffffff;
+        border-color: var(--accent);
+        color: var(--accent-bright);
       }
+
       .danger {
-        background: #dc2626;
-        color: #ffffff;
+        color: var(--red);
+        border-color: var(--red);
+        padding: 6px 10px;
+        font-size: 0.66rem;
       }
+
+      .danger:hover {
+        background: var(--red);
+        color: #1a0505;
+        border-color: var(--red);
+      }
+
       .secondary {
-        background: #e2e8f0;
-        color: #0f172a;
+        color: var(--fg);
       }
+
       #target-list {
         list-style: none;
         padding: 0;
-        margin: 10px 0 0;
+        margin: 14px 0 0;
+        border: 1px solid var(--border);
       }
+
       #target-list li {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 12px;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 8px 10px;
-        margin-bottom: 8px;
+        border-bottom: 1px solid var(--border);
+        padding: 9px 12px;
       }
+
+      #target-list li:last-child {
+        border-bottom: none;
+      }
+
+      #target-list li:nth-child(odd) {
+        background: rgba(61, 220, 132, 0.025);
+      }
+
       #target-list code {
-        font-size: 0.86rem;
+        font-size: 0.8rem;
+        color: var(--fg);
+        font-family: var(--mono);
       }
+
+      #target-list code::before {
+        content: "> ";
+        color: var(--fg-faint);
+      }
+
       #status {
-        margin-top: 8px;
-        color: #334155;
+        margin-top: 4px;
+        color: var(--fg-dim);
+        font-size: 0.78rem;
+        min-height: 1.2em;
       }
+
+      #status::before {
+        content: "$ ";
+        color: var(--accent);
+      }
+
+      #status.status-error {
+        color: var(--red);
+      }
+
+      #status.status-error::before {
+        color: var(--red);
+      }
+
       .row {
         display: flex;
         gap: 8px;
-        align-items: center;
+        align-items: stretch;
       }
+
+      .row input {
+        margin-bottom: 0;
+      }
+
+      .row button {
+        flex-shrink: 0;
+      }
+
       .empty {
-        margin: 0;
-        color: #64748b;
+        margin: 14px 0 0;
+        color: var(--fg-faint);
+        font-size: 0.78rem;
+        padding: 10px 12px;
+        border: 1px dashed var(--border-bright);
+      }
+
+      .empty::before {
+        content: "> ";
       }
     </style>
   </head>
   <body>
+    <div class="titlebar">
+      <span class="dot red"></span>
+      <span class="dot amber"></span>
+      <span class="dot green"></span>
+      <span class="titlebar-label">checkmate &mdash; settings</span>
+    </div>
+
     <main class="container">
-      <h1>Sentinel Scan Options</h1>
-      <p class="subtle">Configure backend access and authorized scan targets.</p>
+      <h1>checkmate / options</h1>
+      <p class="subtle">configure backend access and authorized scan targets</p>
 
       <section class="card">
-        <h2>Backend</h2>
+        <h2>backend</h2>
         <label for="backend-url">Backend base URL</label>
         <input id="backend-url" type="url" placeholder="http://localhost:8000" />
         <label for="auth-token">Auth token</label>
@@ -112,14 +345,14 @@
       </section>
 
       <section class="card">
-        <h2>Authorized Targets</h2>
+        <h2>authorized targets</h2>
         <label for="new-target">Add domain (example.com)</label>
         <div class="row">
           <input id="new-target" type="text" placeholder="example.com" />
           <button id="add-target" class="secondary" type="button">Add</button>
         </div>
         <ul id="target-list"></ul>
-        <p id="empty-state" class="empty" hidden>No authorized targets configured.</p>
+        <p id="empty-state" class="empty" hidden>no authorized targets configured</p>
       </section>
 
       <p id="status"></p>

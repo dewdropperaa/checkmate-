@@ -1,0 +1,261 @@
+{
+  "meta": {
+    "title": "checkmate — Find vulnerabilities before hackers do",
+    "description": "Automated security scanning for websites. Discover misconfigurations, weak headers, TLS issues, and more. Get AI-powered reports in minutes."
+  },
+  "nav": {
+    "how": "How it works",
+    "features": "Features",
+    "pricing": "Pricing",
+    "faq": "FAQ",
+    "signIn": "Sign In",
+    "getStarted": "Start Free",
+    "lang": "Language"
+  },
+  "hero": {
+    "badge": "Security scanning made simple",
+    "headline": "Find vulnerabilities ",
+    "headlineHighlight": "before hackers do.",
+    "tagline": "Automated security scanning that finds misconfigurations, weak headers, exposed files, and more. Get AI-powered executive summaries and shareable PDF reports in minutes.",
+    "ctaPrimary": "Start scanning free",
+    "ctaSecondary": "See how it works",
+    "stat1Label": "Scans completed",
+    "stat2Label": "Vulns found",
+    "stat3Label": "Accuracy"
+  },
+  "socialProof": {
+    "label": "Trusted by security teams across Morocco",
+    "companies": "Companies protected",
+    "scans": "Scans completed",
+    "vulns": "Vulnerabilities found",
+    "uptime": "Uptime"
+  },
+  "context": {
+    "label": "context",
+    "text": "Cybersecurity awareness is rising in Morocco — web teams need regular configuration checks, not only one-off audits. checkmate helps you continuously monitor targets you are explicitly authorized to test."
+  },
+  "how": {
+    "title": "How it works",
+    "subtitle": "From scan to fix in four simple steps. No security expertise required.",
+    "steps": {
+      "scan": {
+        "title": "Point & Scan",
+        "body": "Enter your target URL. Our scanners automatically discover subdomains, crawl pages, and map your attack surface."
+      },
+      "findings": {
+        "title": "Get Findings",
+        "body": "Receive detailed findings ranked by severity — critical issues first. Each finding includes proof and context."
+      },
+      "summary": {
+        "title": "AI Analysis",
+        "body": "Our AI generates an executive summary explaining risks in plain language, plus a prioritized remediation roadmap."
+      },
+      "fix": {
+        "title": "Fix & Export",
+        "body": "Export professional PDF reports for stakeholders. Get config snippets to fix issues fast."
+      }
+    }
+  },
+  "features": {
+    "title": "Everything you need to secure your web apps",
+    "subtitle": "Enterprise-grade security scanning without the enterprise complexity.",
+    "items": {
+      "headerChecks": {
+        "title": "Security Headers",
+        "body": "CSP, HSTS, X-Frame-Options, CORS, cookie flags — comprehensive header analysis against OWASP guidelines."
+      },
+      "tlsChecks": {
+        "title": "TLS/SSL Analysis",
+        "body": "Full TLS configuration audit. Detect weak ciphers, expired certificates, and protocol vulnerabilities."
+      },
+      "exposedFiles": {
+        "title": "Vulnerability Scanning",
+        "body": "Nuclei-powered scanning for known CVEs, exposed admin panels, misconfigurations, and sensitive file leaks."
+      },
+      "subdomains": {
+        "title": "Asset Discovery",
+        "body": "Automatic subdomain enumeration and crawling. Find forgotten assets before attackers do."
+      },
+      "aiSummary": {
+        "title": "AI Executive Summary",
+        "body": "GPT-powered analysis that explains findings in business terms. Perfect for stakeholder reports."
+      },
+      "agencyReports": {
+        "title": "Professional Reports",
+        "body": "Beautiful PDF exports with your findings, recommendations, and remediation steps. White-label coming soon."
+      }
+    }
+  },
+  "testimonials": {
+    "label": "what people say",
+    "title": "Loved by security-conscious teams",
+    "testimonial1": {
+      "quote": "checkmate found misconfigurations we missed in our manual audits. The AI summary saved us hours of report writing.",
+      "name": "Ahmed K.",
+      "role": "CTO",
+      "company": "TechStartup MA"
+    },
+    "testimonial2": {
+      "quote": "We use checkmate for all our client security assessments. The PDF reports look professional and clients love the clarity.",
+      "name": "Sara M.",
+      "role": "Security Lead",
+      "company": "Digital Agency"
+    },
+    "testimonial3": {
+      "quote": "Finally, a security tool that doesn't require a PhD to use. I run scans weekly and sleep better at night.",
+      "name": "Youssef B.",
+      "role": "Founder",
+      "company": "WebStudio"
+    }
+  },
+  "cta": {
+    "title": "Ready to secure your web applications?",
+    "text": "Start scanning in minutes. No credit card required.",
+    "primary": "Start scanning free",
+    "secondary": "Contact sales"
+  },
+  "featureKeys": {
+    "headerChecks": "HTTP header checks",
+    "tlsChecks": "TLS checks (testssl)",
+    "subdomainDiscovery": "Subdomain discovery",
+    "nucleiMisconfig": "Nuclei scan (vulns / misconfig)",
+    "jsDependencyCve": "JS CVEs (retire.js)",
+    "aiExecutiveSummary": "AI executive summary",
+    "pdfHtmlReports": "PDF / HTML / MD reports",
+    "chromeExtension": "Chrome extension",
+    "activeTesting": "Active tests (ZAP / sqlmap)",
+    "authorizedTargets": "Authorized targets only",
+    "whiteLabelReports": "White-label reports",
+    "multiClientWorkspace": "Multi-client workspace",
+    "prioritySupport": "Priority support"
+  },
+  "plans": {
+    "title": "Simple, transparent pricing",
+    "subtitle": "Start free, upgrade when you need more power.",
+    "monthly": "Monthly",
+    "yearly": "Yearly",
+    "yearlyHint": "Save 20%",
+    "targets": "{count} target",
+    "targets_plural": "{count} targets",
+    "targetsCustom": "Unlimited targets",
+    "scans": "{count} scans/month",
+    "scansCustom": "Unlimited scans",
+    "ctaSignup": "Get started",
+    "ctaContact": "Contact us",
+    "free": {
+      "name": "Free",
+      "blurb": "Perfect for trying out checkmate on your own projects."
+    },
+    "starter": {
+      "name": "Starter",
+      "blurb": "For freelancers and small teams getting serious about security."
+    },
+    "pro": {
+      "name": "Pro",
+      "blurb": "For growing teams that need deeper scanning and active tests."
+    },
+    "agency": {
+      "name": "Agency",
+      "blurb": "For agencies managing multiple clients with white-label needs."
+    }
+  },
+  "faq": {
+    "title": "Frequently asked questions",
+    "items": [
+      {
+        "q": "What can I scan with checkmate?",
+        "a": "You can scan any web application you own or have explicit authorization to test. checkmate checks security headers, TLS configuration, subdomains, known vulnerabilities, exposed files, and more."
+      },
+      {
+        "q": "Is this a replacement for a penetration test?",
+        "a": "No. checkmate is for continuous monitoring between audits. It catches common misconfigurations and known vulnerabilities, but doesn't replace a comprehensive manual penetration test by qualified professionals."
+      },
+      {
+        "q": "How does the AI summary work?",
+        "a": "Our AI analyzes your scan findings and generates a plain-language executive summary explaining the risks and a prioritized remediation roadmap. Great for sharing with non-technical stakeholders."
+      },
+      {
+        "q": "Where do the scans run?",
+        "a": "checkmate runs on your self-hosted backend. You control your data. The Chrome extension connects to your own server, not a third-party cloud."
+      },
+      {
+        "q": "Can I use checkmate for my clients?",
+        "a": "Yes! The Agency plan includes features for managing multiple clients, including white-label PDF reports (coming soon). Many digital agencies use checkmate for client security assessments."
+      }
+    ]
+  },
+  "footer": {
+    "tagline": "Security scanning made simple",
+    "terms": "Terms",
+    "privacy": "Privacy",
+    "contact": "Contact",
+    "cta": "Start Free",
+    "rights": "© 2026 checkmate. All rights reserved."
+  },
+  "auth": {
+    "signupTitle": "Create your account",
+    "signupSubtitle": "Start scanning with a free checkmate account.",
+    "signinTitle": "Welcome back",
+    "signinSubtitle": "Sign in to open your security dashboard.",
+    "email": "Email",
+    "password": "Password",
+    "confirmPassword": "Confirm password",
+    "passwordStrength": "Strength",
+    "strength": {
+      "empty": "—",
+      "weak": "Weak",
+      "fair": "Fair",
+      "good": "Good",
+      "strong": "Strong"
+    },
+    "submitSignIn": "Sign in",
+    "submitSignUp": "Create account",
+    "submitting": "Please wait…",
+    "forgotPassword": "Forgot password?",
+    "continueWithGoogle": "Continue with Google",
+    "or": "or",
+    "noAccount": "No account yet?",
+    "hasAccount": "Already have an account?",
+    "goToSignUp": "Sign up",
+    "goToSignIn": "Sign in",
+    "backToSignIn": "Back to sign in",
+    "backHome": "Back to checkmate",
+    "checkInbox": "Check your inbox — we sent a verification link to confirm your email. You can sign in after verifying.",
+    "verifyEmailTitle": "Verify your email",
+    "verifyEmailBody": "We sent a verification link to your inbox. Open it to unlock your dashboard.",
+    "resetSentTitle": "Check your email",
+    "resetSent": "If an account exists for that email, a password reset link is on its way.",
+    "checkingSession": "Checking session…",
+    "redirecting": "Redirecting…",
+    "dashboardTitle": "Dashboard",
+    "dashboardWelcome": "You are signed in. Scan management will live here.",
+    "signOut": "Sign out",
+    "comingSoon": "Authentication is coming soon. Join our waitlist to be notified when we launch.",
+    "errors": {
+      "emailAlreadyInUse": "An account already exists with this email. Sign in instead.",
+      "weakPassword": "Use at least 8 characters with upper, lower, and a number.",
+      "passwordRequired": "Enter your password.",
+      "passwordMismatch": "Passwords do not match.",
+      "wrongPassword": "Incorrect email or password.",
+      "userNotFound": "Incorrect email or password.",
+      "invalidEmail": "Enter a valid email address.",
+      "tooManyRequests": "Too many attempts. Please wait {seconds} seconds before trying again.",
+      "accountExistsWithDifferentCredential": "This email is already registered with a different sign-in method. Sign in with your original method (email/password), then you can link Google later.",
+      "popupClosedByUser": "Google sign-in was cancelled.",
+      "popupBlocked": "Your browser blocked the sign-in popup. Allow popups for this site and try again.",
+      "networkRequestFailed": "Network error. Check your connection and try again.",
+      "requiresRecentLogin": "For security, sign in again before continuing.",
+      "invalidCredential": "Incorrect email or password.",
+      "operationNotAllowed": "This sign-in method is disabled. Contact support.",
+      "userDisabled": "This account has been disabled. Contact support.",
+      "unauthorizedDomain": "This domain is not authorized in Firebase. Add localhost under Authentication → Settings → Authorized domains.",
+      "authInternalError": "Google sign-in failed (popup blocked, third-party cookies off, or a browser extension). Allow popups or try another browser.",
+      "generic": "Something went wrong. Please try again."
+    }
+  },
+  "legal": {
+    "termsTitle": "Terms of use",
+    "privacyTitle": "Privacy policy",
+    "placeholder": "Legal copy to be written before production launch."
+  }
+}

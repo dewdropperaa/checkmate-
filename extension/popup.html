@@ -3,184 +3,588 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Sentinel Scan</title>
+    <title>checkmate</title>
     <style>
+      :root {
+        --bg: #0a0d0b;
+        --panel: #0e1310;
+        --panel-alt: #0c1512;
+        --border: #1c2b22;
+        --border-bright: #2b4534;
+        --fg: #cbd8cf;
+        --fg-dim: #6e8478;
+        --fg-faint: #47594e;
+        --accent: #3ddc84;
+        --accent-bright: #7dffb0;
+        --accent-ink: #06170e;
+        --amber: #ffb454;
+        --red: #ff5d5d;
+        --yellow: #e8d24d;
+        --mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Consolas,
+          "Liberation Mono", "SFMono-Regular", Menlo, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
       body {
-        font-family: "Segoe UI", system-ui, sans-serif;
+        font-family: var(--mono);
         margin: 0;
-        width: 360px;
-        background: #f8fafc;
-        color: #0f172a;
+        width: 380px;
+        background: var(--bg);
+        color: var(--fg);
+        position: relative;
+        overflow: hidden;
       }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 50;
+        background-image: repeating-linear-gradient(
+          rgba(255, 255, 255, 0.028) 0px,
+          rgba(255, 255, 255, 0.028) 1px,
+          transparent 1px,
+          transparent 3px
+        );
+        mix-blend-mode: overlay;
+        opacity: 0.55;
+      }
+
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 49;
+        background: radial-gradient(
+          ellipse at 50% 0%,
+          rgba(61, 220, 132, 0.06),
+          transparent 60%
+        );
+      }
+
+      .titlebar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 12px;
+        background: var(--panel-alt);
+        border-bottom: 1px solid var(--border);
+      }
+
+      .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+
+      .dot.red {
+        background: #ff5f56;
+      }
+
+      .dot.amber {
+        background: #ffbd2e;
+      }
+
+      .dot.green {
+        background: #27c93f;
+      }
+
+      .titlebar-label {
+        flex: 1;
+        text-align: center;
+        font-size: 0.68rem;
+        letter-spacing: 0.06em;
+        color: var(--fg-faint);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
       .container {
-        padding: 16px;
+        padding: 16px 16px 14px;
+        position: relative;
       }
+
+      .brand {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        margin: 0 0 3px;
+      }
+
       h1 {
         margin: 0;
-        font-size: 1.05rem;
+        font-size: 0.96rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        color: var(--accent-bright);
       }
+
+      h1::before {
+        content: "#";
+        color: var(--fg-faint);
+        margin-right: 6px;
+      }
+
+      .version-tag {
+        font-size: 0.62rem;
+        color: var(--fg-faint);
+        letter-spacing: 0.04em;
+      }
+
       .hint {
-        margin: 6px 0 12px;
-        font-size: 0.78rem;
-        color: #475569;
+        margin: 0 0 14px;
+        font-size: 0.72rem;
+        color: var(--fg-dim);
+        line-height: 1.4;
       }
+
+      .hint::before {
+        content: "// ";
+        color: var(--fg-faint);
+      }
+
       .label {
         margin: 0 0 6px;
-        font-size: 0.75rem;
-        color: #64748b;
+        font-size: 0.66rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--fg-faint);
       }
+
+      .label::before {
+        content: "// ";
+      }
+
       .url-box {
-        margin: 0 0 12px;
-        padding: 10px;
-        border-radius: 8px;
-        border: 1px solid #cbd5e1;
-        background: #ffffff;
-        font-size: 0.76rem;
-        line-height: 1.3;
-        max-height: 58px;
+        margin: 0 0 14px;
+        padding: 9px 10px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--accent);
+        font-size: 0.73rem;
+        line-height: 1.4;
+        max-height: 54px;
         overflow: auto;
         word-break: break-all;
+        position: relative;
       }
+
+      .url-box::before {
+        content: "$ ";
+        color: var(--fg-faint);
+      }
+
       button {
         width: 100%;
         box-sizing: border-box;
-        border-radius: 8px;
-        border: none;
-        padding: 10px 12px;
+        border-radius: 0;
+        border: 1px solid var(--border-bright);
+        background: transparent;
+        color: var(--accent);
+        padding: 9px 12px;
+        font-family: var(--mono);
+        font-size: 0.76rem;
         font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
         cursor: pointer;
+        transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
       }
+
+      button::before {
+        content: "[ ";
+        opacity: 0.55;
+      }
+
+      button::after {
+        content: " ]";
+        opacity: 0.55;
+      }
+
+      button:hover:not(:disabled) {
+        background: var(--accent);
+        color: var(--accent-ink);
+        border-color: var(--accent);
+      }
+
       #scan-btn {
-        background: #1d4ed8;
-        color: #ffffff;
-        margin-bottom: 12px;
+        margin-bottom: 10px;
+        border-color: var(--accent);
+        color: var(--accent-bright);
       }
+
       button:disabled {
-        opacity: 0.45;
+        opacity: 0.4;
         cursor: not-allowed;
       }
+
       #scan-status {
-        margin: 0 0 10px;
-        font-size: 0.82rem;
-        color: #334155;
+        margin: 0 0 12px;
+        font-size: 0.75rem;
+        color: var(--fg);
+        line-height: 1.4;
+        min-height: 1.2em;
       }
+
+      #scan-status::before {
+        content: "> ";
+        color: var(--accent);
+      }
+
       .muted {
-        color: #64748b;
+        color: var(--fg-dim);
       }
+
+      .muted::after {
+        content: "_";
+        color: var(--accent);
+        animation: blink 1s step-end infinite;
+      }
+
+      @keyframes blink {
+        50% {
+          opacity: 0;
+        }
+      }
+
+      #live-section {
+        margin: 0 0 14px;
+        padding: 10px 10px 8px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+      }
+
+      #live-section .live-flag {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.64rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--amber);
+        margin-bottom: 8px;
+      }
+
+      #live-section .live-flag::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        background: var(--amber);
+        border-radius: 50%;
+        animation: pulse 1.1s ease-in-out infinite;
+        flex-shrink: 0;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.25;
+        }
+      }
+
       .row {
         display: flex;
         justify-content: space-between;
         gap: 12px;
-        margin: 3px 0;
-        font-size: 0.8rem;
+        margin: 4px 0;
+        font-size: 0.75rem;
       }
+
+      .row span {
+        color: var(--fg-dim);
+      }
+
+      .row strong {
+        color: var(--fg);
+        font-weight: 600;
+        text-align: right;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
       .severity-list {
         margin: 8px 0 0;
         padding: 0;
         list-style: none;
+        border: 1px solid var(--border);
+        background: var(--panel);
       }
+
       .severity-list li {
         display: flex;
         justify-content: space-between;
-        font-size: 0.8rem;
-        margin: 3px 0;
+        font-size: 0.74rem;
+        padding: 5px 10px;
+        border-bottom: 1px solid var(--border);
       }
+
+      .severity-list li:last-child {
+        border-bottom: none;
+      }
+
+      .severity-list li span {
+        color: var(--fg-dim);
+        letter-spacing: 0.04em;
+      }
+
+      .severity-list li strong {
+        font-weight: 700;
+      }
+
+      .severity-list li[data-severity="critical"] strong {
+        color: var(--red);
+      }
+
+      .severity-list li[data-severity="high"] strong {
+        color: var(--amber);
+      }
+
+      .severity-list li[data-severity="medium"] strong {
+        color: var(--yellow);
+      }
+
+      .severity-list li[data-severity="low"] strong {
+        color: var(--accent);
+      }
+
+      .severity-list li[data-severity="info"] strong {
+        color: var(--fg-dim);
+      }
+
       #report-btn {
-        background: #0f172a;
-        color: #ffffff;
         margin-top: 10px;
       }
+
+      #download-pdf-btn {
+        margin-top: 8px;
+        border-color: var(--accent);
+        color: var(--accent-bright);
+      }
+
       #open-options {
-        margin-top: 10px;
-        background: transparent;
-        color: #1d4ed8;
-        border: 1px solid #93c5fd;
+        width: auto;
+        margin-top: 14px;
+        border: none;
+        background: none;
+        padding: 0;
+        color: var(--fg-faint);
+        font-size: 0.68rem;
+        text-transform: none;
+        letter-spacing: 0.02em;
+        font-weight: 500;
       }
+
+      #open-options::before,
+      #open-options::after {
+        content: "";
+      }
+
+      #open-options::before {
+        content: "> ";
+      }
+
+      #open-options:hover {
+        background: none;
+        color: var(--accent);
+      }
+
       .modal-backdrop {
         position: fixed;
         inset: 0;
-        background: rgba(15, 23, 42, 0.45);
+        background: rgba(5, 8, 6, 0.72);
         display: flex;
         align-items: center;
         justify-content: center;
         padding: 14px;
+        z-index: 60;
       }
+
       .modal {
         width: 100%;
-        background: #ffffff;
-        border-radius: 10px;
-        border: 1px solid #cbd5e1;
+        background: var(--panel);
+        border: 1px solid var(--red);
+        box-shadow: 0 0 0 1px rgba(255, 93, 93, 0.15), 0 0 22px rgba(255, 93, 93, 0.12);
         padding: 14px;
       }
+
       .modal h2 {
         margin: 0 0 10px;
-        font-size: 0.94rem;
+        font-size: 0.78rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--red);
+        font-weight: 700;
       }
+
+      .modal h2::before {
+        content: "!! ";
+      }
+
+      .modal h2::after {
+        content: " !!";
+      }
+
       .modal p {
         margin: 0;
-        font-size: 0.8rem;
-        color: #334155;
+        font-size: 0.74rem;
+        color: var(--fg);
+        line-height: 1.45;
       }
+
+      .tool-checklist {
+        margin: 12px 0 0;
+        padding: 0;
+        list-style: none;
+        border: 1px solid var(--border-bright);
+        background: var(--panel-alt);
+      }
+
+      .tool-checklist li {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .tool-checklist li:last-child {
+        border-bottom: none;
+      }
+
+      .tool-checklist input[type="checkbox"] {
+        width: 14px;
+        height: 14px;
+        accent-color: var(--red);
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+
+      .tool-checklist label {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        cursor: pointer;
+        flex: 1;
+        min-width: 0;
+      }
+
+      .tool-checklist .tool-name {
+        font-size: 0.76rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--fg);
+      }
+
+      .tool-checklist .tool-desc {
+        font-size: 0.66rem;
+        color: var(--fg-dim);
+      }
+
       .modal-actions {
         display: flex;
         gap: 8px;
-        margin-top: 12px;
+        margin-top: 14px;
       }
+
       #reject-btn {
-        background: #e2e8f0;
-        color: #0f172a;
+        color: var(--fg-dim);
+        border-color: var(--border-bright);
       }
+
+      #reject-btn:hover {
+        background: var(--fg-dim);
+        color: var(--panel);
+        border-color: var(--fg-dim);
+      }
+
       #approve-btn {
-        background: #dc2626;
-        color: #ffffff;
+        color: var(--red);
+        border-color: var(--red);
       }
+
+      #approve-btn:hover {
+        background: var(--red);
+        color: #1a0505;
+        border-color: var(--red);
+      }
+
       [hidden] {
         display: none !important;
       }
+
       .small {
-        font-size: 0.75rem;
+        font-size: 0.68rem;
       }
+
       #approval-error {
         margin-top: 8px;
-        color: #b91c1c;
+        color: var(--red);
+      }
+
+      #approval-error::before {
+        content: "> ";
       }
     </style>
   </head>
   <body>
-    <div class="container">
-      <h1>Sentinel Scan</h1>
-      <p class="hint">Scans run only through your self-hosted backend.</p>
+    <div class="titlebar">
+      <span class="dot red"></span>
+      <span class="dot amber"></span>
+      <span class="dot green"></span>
+      <span class="titlebar-label">checkmate &mdash; zsh</span>
+    </div>
 
-      <p class="label">Current tab URL</p>
-      <div id="current-url" class="url-box">Loading...</div>
+    <div class="container">
+      <div class="brand">
+        <h1>checkmate</h1>
+        <span class="version-tag">authorized-only</span>
+      </div>
+      <p class="hint">scans run only through your self-hosted backend</p>
+
+      <p class="label">target</p>
+      <div id="current-url" class="url-box">loading...</div>
 
       <button id="scan-btn" type="button" disabled>Scan this site</button>
-      <p id="scan-status" class="muted">Detecting current site...</p>
+      <p id="scan-status" class="muted">detecting current site</p>
 
       <div id="live-section" hidden>
-        <div class="row"><span>Current node</span><strong id="current-node">-</strong></div>
-        <div class="row"><span>Findings count</span><strong id="findings-count">0</strong></div>
+        <div class="live-flag">scan in progress</div>
+        <div class="row"><span>node</span><strong id="current-node">-</strong></div>
+        <div class="row"><span>findings</span><strong id="findings-count">0</strong></div>
       </div>
 
       <div id="summary-section" hidden>
-        <p class="label">Findings by severity</p>
+        <p class="label">findings by severity</p>
         <ul id="severity-summary" class="severity-list"></ul>
         <button id="report-btn" type="button" hidden>View full report</button>
+        <button id="download-pdf-btn" type="button" hidden>Download PDF</button>
       </div>
 
-      <button id="open-options" type="button">Options</button>
+      <button id="open-options" type="button">options</button>
     </div>
 
     <div id="approval-modal" class="modal-backdrop" hidden>
       <div class="modal">
-        <h2>Human approval required</h2>
+        <h2>human approval required</h2>
         <p id="approval-text">
-          This scan wants to run active tests (sqlmap/ZAP active scan) against this target.
-          Approve?
+          This scan wants to run active tests against this target. Pick which
+          tools to allow, then approve.
         </p>
+        <ul id="tool-checklist" class="tool-checklist"></ul>
         <div class="modal-actions">
-          <button id="reject-btn" type="button">Reject</button>
-          <button id="approve-btn" type="button">Approve</button>
+          <button id="reject-btn" type="button">Reject All</button>
+          <button id="approve-btn" type="button">Run Selected</button>
         </div>
         <p id="approval-error" class="small" hidden></p>
       </div>

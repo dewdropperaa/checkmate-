@@ -1,12 +1,12 @@
 /** Content script — passive page context bridge (no scanning logic yet). */
 
-const SENTINEL_ATTR = "data-sentinel-scan";
+const CHECKMATE_ATTR = "data-checkmate";
 
 function markPage(): void {
-  if (document.documentElement.getAttribute(SENTINEL_ATTR)) {
+  if (document.documentElement.getAttribute(CHECKMATE_ATTR)) {
     return;
   }
-  document.documentElement.setAttribute(SENTINEL_ATTR, "active");
+  document.documentElement.setAttribute(CHECKMATE_ATTR, "active");
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {

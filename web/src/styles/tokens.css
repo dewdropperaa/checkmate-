@@ -1,0 +1,52 @@
+/**
+ * Checkmate design tokens — single source of truth for the web UI.
+ * Values mirror extension/popup.html, extension/options.html, and
+ * backend/core/pdf_design.py so brand stays consistent across surfaces.
+ */
+:root {
+  /* Backgrounds */
+  --bg: #0a0d0b;
+  --panel: #0e1310;
+  --panel-alt: #0c1512;
+  --input-bg: #070a08;
+
+  /* Borders */
+  --border: #1c2b22;
+  --border-bright: #2b4534;
+
+  /* Text */
+  --fg: #cbd8cf;
+  --fg-dim: #6e8478;
+  --fg-faint: #47594e;
+
+  /* Brand accent */
+  --accent: #3ddc84;
+  --accent-bright: #7dffb0;
+  --accent-ink: #06170e;
+
+  /* Semantic (extension UI severity) */
+  --amber: #ffb454;
+  --red: #ff5d5d;
+  --yellow: #e8d24d;
+
+  /* Traffic-light titlebar dots (extension) */
+  --dot-red: #ff5f56;
+  --dot-amber: #ffbd2e;
+  --dot-green: #27c93f;
+
+  /* PDF report severity (WCAG-oriented; used for how-it-works badges) */
+  --sev-critical: #b91c1c;
+  --sev-high: #b45309;
+  --sev-medium: #854d0e;
+  --sev-low: #1d4ed8;
+  --sev-info: #4b5563;
+
+  /* Typography — same stack as extension --mono */
+  --mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Consolas,
+    "Liberation Mono", "SFMono-Regular", Menlo, monospace;
+
+  /* Layout */
+  --max-width: 1200px;
+  --radius: 0;
+  --space-section: clamp(4rem, 10vw, 6rem);
+}

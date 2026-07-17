@@ -386,6 +386,7 @@ class TestHeaderChecker:
 
         with patch.object(HeaderChecker, "_get_client") as mock_get_client:
             mock_client = AsyncMock()
+            mock_client.head = AsyncMock(return_value=mock_response)
             mock_client.get = AsyncMock(return_value=mock_response)
             mock_get_client.return_value = mock_client
 
@@ -413,6 +414,7 @@ class TestHeaderChecker:
 
         with patch.object(HeaderChecker, "_get_client") as mock_get_client:
             mock_client = AsyncMock()
+            mock_client.head = AsyncMock(return_value=mock_response)
             mock_client.get = AsyncMock(return_value=mock_response)
             mock_get_client.return_value = mock_client
 
@@ -440,6 +442,7 @@ class TestHeaderChecker:
 
         with patch.object(HeaderChecker, "_get_client") as mock_get_client:
             mock_client = AsyncMock()
+            mock_client.head = AsyncMock(return_value=mock_response)
             mock_client.get = AsyncMock(return_value=mock_response)
             mock_get_client.return_value = mock_client
 
@@ -462,6 +465,7 @@ class TestHeaderChecker:
 
         with patch.object(HeaderChecker, "_get_client") as mock_get_client:
             mock_client = AsyncMock()
+            mock_client.head = AsyncMock(return_value=mock_response)
             mock_client.get = AsyncMock(return_value=mock_response)
             mock_get_client.return_value = mock_client
 
@@ -485,6 +489,7 @@ class TestHeaderChecker:
 
         with patch.object(HeaderChecker, "_get_client") as mock_get_client:
             mock_client = AsyncMock()
+            mock_client.head = AsyncMock(return_value=mock_response)
             mock_client.get = AsyncMock(return_value=mock_response)
             mock_get_client.return_value = mock_client
 
@@ -510,6 +515,7 @@ class TestHeaderChecker:
 
         with patch.object(HeaderChecker, "_get_client") as mock_get_client:
             mock_client = AsyncMock()
+            mock_client.head = AsyncMock(return_value=mock_response)
             mock_client.get = AsyncMock(return_value=mock_response)
             mock_get_client.return_value = mock_client
 
@@ -541,6 +547,7 @@ class TestHeaderChecker:
 
         with patch.object(HeaderChecker, "_get_client") as mock_get_client:
             mock_client = AsyncMock()
+            mock_client.head = AsyncMock(return_value=mock_response)
             mock_client.get = AsyncMock(return_value=mock_response)
             mock_get_client.return_value = mock_client
 
@@ -563,6 +570,7 @@ class TestHeaderChecker:
 
         with patch.object(HeaderChecker, "_get_client") as mock_get_client:
             mock_client = AsyncMock()
+            mock_client.head = AsyncMock(return_value=mock_response)
             mock_client.get = AsyncMock(return_value=mock_response)
             mock_get_client.return_value = mock_client
 
@@ -577,7 +585,7 @@ class TestHeaderChecker:
             )
 
         assert result.data["origins_checked"] == 1
-        assert mock_client.get.await_count == 1
+        assert mock_client.head.await_count == 1
         csp_findings = [f for f in result.data["findings"] if f["type"] == "missing-csp"]
         assert len(csp_findings) == 1
         assert csp_findings[0]["url"] == "https://authorized.example.com"
@@ -698,6 +706,34 @@ class TestSQLMapTool:
         assert result is not None
         assert "authorized scope" not in (result.error or "").lower()
 
+    @pytest.mark.asyncio
+    async def test_sqlmap_caps_level_and_risk_in_command_args(self) -> None:
+        """Configured scope above caps is clamped before subprocess execution."""
+        from tools.sqlmap_tool import SQLMapTool
+
+        captured: dict[str, Any] = {}
+
+        async def _fake_run_subprocess(
+            binary_path: Path,
+            args: list[str],
+            timeout: float = 120.0,
+            env: dict[str, str] | None = None,
+        ) -> tuple[int, str, str, bool]:
+            captured["args"] = list(args)
+            return (0, "", "", False)
+
+        with patch.object(SQLMapTool, "get_binary_path", return_value=Path("/opt/tools/sqlmap")), \
+             patch("tools.sqlmap_tool.run_subprocess_safely", side_effect=_fake_run_subprocess):
+            tool = SQLMapTool()
+            await tool.run(
+                "https://authorized.example.com/api?id=1",
+                {"level": 9, "risk": 9},
+            )
+
+        args = captured["args"]
+        assert "--level" in args and args[args.index("--level") + 1] == "2"
+        assert "--risk" in args and args[args.index("--risk") + 1] == "2"
+
 
 class TestFindInjectableURLs:
     """Tests for the injectable URL finder."""
@@ -777,7 +813,7 @@ class TestDetectionAgent:
             mock_passive.assert_called_once()
             mock_active.assert_not_called()
 
-        assert result["_detection_metadata"]["active_tools_run"] is False
+        assert result["detection_metadata"]["active_tools_run"] is False
 
     @pytest.mark.asyncio
     async def test_detection_runs_active_tools_with_approval(self) -> None:
@@ -813,7 +849,7 @@ class TestDetectionAgent:
             mock_passive.assert_called_once()
             mock_active.assert_called_once()
 
-        assert result["_detection_metadata"]["active_tools_run"] is True
+        assert result["detection_metadata"]["active_tools_run"] is True
 
     @pytest.mark.asyncio
     async def test_detection_deduplicates_findings(self) -> None:
@@ -868,7 +904,7 @@ class TestDetectionAgent:
 
             result = await run_detection_async(state)
 
-        assert result["_detection_metadata"]["deduplicated_count"] == 2
+        assert result["detection_metadata"]["deduplicated_count"] == 2
         assert len(result["findings"]) == 2
 
     @pytest.mark.asyncio
@@ -929,3 +965,183 @@ class TestDetectionAgent:
         assert len(findings) == 1
         assert "nuclei" in errors
         assert "testssl" in errors
+
+
+class TestPerToolActiveApproval:
+    """Tests for per-tool gating: a reviewer may approve sqlmap while
+    rejecting zap (or vice versa), instead of one bulk approve/reject."""
+
+    def _base_state(self, **overrides: Any) -> ScanState:
+        state: ScanState = {
+            "scan_id": "test-per-tool",
+            "target": "authorized.example.com",
+            "scope": {},
+            "authorized": True,
+            "recon_results": {
+                "hosts": ["authorized.example.com"],
+                "urls": ["https://authorized.example.com/api?id=1"],
+                "js_files": [],
+            },
+            "planned_active_tests": ["zap", "sqlmap"],
+            "findings": [],
+            "severity_scores": {},
+            "report": None,
+            "status": "running",
+            "human_approval_needed": True,
+            "human_approved": True,
+        }
+        state.update(overrides)  # type: ignore[typeddict-item]
+        return state
+
+    def test_resolve_active_tool_selection_honors_subset(self) -> None:
+        from agents.detection import _resolve_active_tool_selection
+
+        state = self._base_state(approved_tools=["sqlmap"])
+        approved, rejected = _resolve_active_tool_selection(state)
+        assert approved == ["sqlmap"]
+        assert rejected == ["zap"]
+
+    def test_resolve_active_tool_selection_empty_list_rejects_all(self) -> None:
+        from agents.detection import _resolve_active_tool_selection
+
+        state = self._base_state(approved_tools=[])
+        approved, rejected = _resolve_active_tool_selection(state)
+        assert approved == []
+        assert rejected == ["zap", "sqlmap"]
+
+    def test_resolve_active_tool_selection_legacy_bulk_fallback(self) -> None:
+        """States without `approved_tools` fall back to bulk `human_approved`."""
+        from agents.detection import _resolve_active_tool_selection
+
+        state = self._base_state(human_approved=True)
+        assert "approved_tools" not in state
+        approved, rejected = _resolve_active_tool_selection(state)
+        assert approved == ["zap", "sqlmap"]
+        assert rejected == []
+
+        state = self._base_state(human_approved=False)
+        approved, rejected = _resolve_active_tool_selection(state)
+        assert approved == []
+        assert rejected == ["zap", "sqlmap"]
+
+    @pytest.mark.asyncio
+    async def test_run_active_tools_only_runs_approved_sqlmap(self) -> None:
+        """Approving sqlmap but rejecting zap should only invoke sqlmap."""
+        from agents.detection import run_active_tools
+        from tools.zap_tool import ZAPTool
+        from tools.sqlmap_tool import SQLMapTool
+
+        state = self._base_state(approved_tools=["sqlmap"])
+
+        mock_sqlmap_result = ToolResult(
+            tool_name="sqlmap",
+            target="https://authorized.example.com/api?id=1",
+            success=True,
+            data={"findings": [], "finding_count": 0, "vulnerable": False},
+        )
+
+        with patch.object(ZAPTool, "run", AsyncMock()) as mock_zap, \
+             patch.object(ZAPTool, "close", return_value=None), \
+             patch.object(SQLMapTool, "run_batch", AsyncMock(return_value=mock_sqlmap_result)) as mock_sqlmap:
+            findings, errors = await run_active_tools(state)
+
+        mock_zap.assert_not_called()
+        mock_sqlmap.assert_called_once()
+        assert findings == []
+        assert errors == {}
+
+    @pytest.mark.asyncio
+    async def test_run_active_tools_sqlmap_caps_to_ten_urls(self) -> None:
+        """Only the first 10 injectable URLs are passed to sqlmap.run_batch."""
+        from agents.detection import run_active_tools
+        from tools.zap_tool import ZAPTool
+        from tools.sqlmap_tool import SQLMapTool
+
+        urls = [f"https://authorized.example.com/api?id={i}" for i in range(15)]
+        state = self._base_state(
+            approved_tools=["sqlmap"],
+            recon_results={"hosts": ["authorized.example.com"], "urls": urls, "js_files": []},
+        )
+
+        captured: dict[str, Any] = {}
+
+        async def _capture_run_batch(url_batch: list[str], scope: dict[str, Any]) -> ToolResult:
+            captured["urls"] = list(url_batch)
+            captured["scope"] = dict(scope)
+            return ToolResult(
+                tool_name="sqlmap",
+                target="batch",
+                success=True,
+                data={"findings": [], "finding_count": 0, "urls_tested": len(url_batch)},
+            )
+
+        with patch.object(ZAPTool, "run", AsyncMock()) as mock_zap, \
+             patch.object(ZAPTool, "close", return_value=None), \
+             patch.object(SQLMapTool, "run_batch", AsyncMock(side_effect=_capture_run_batch)):
+            findings, errors = await run_active_tools(state)
+
+        mock_zap.assert_not_called()
+        assert findings == []
+        assert errors == {}
+        assert len(captured["urls"]) == 10
+        assert captured["urls"] == urls[:10]
+
+    @pytest.mark.asyncio
+    async def test_run_active_tools_only_runs_approved_zap(self) -> None:
+        """Approving zap but rejecting sqlmap should only invoke zap."""
+        from agents.detection import run_active_tools
+        from tools.zap_tool import ZAPTool
+        from tools.sqlmap_tool import SQLMapTool
+
+        state = self._base_state(approved_tools=["zap"])
+
+        mock_zap_result = ToolResult(
+            tool_name="zap",
+            target="https://authorized.example.com",
+            success=True,
+            data={"findings": [], "finding_count": 0},
+        )
+
+        with patch.object(ZAPTool, "run", AsyncMock(return_value=mock_zap_result)) as mock_zap, \
+             patch.object(ZAPTool, "close", return_value=None), \
+             patch.object(SQLMapTool, "run_batch", AsyncMock()) as mock_sqlmap:
+            findings, errors = await run_active_tools(state)
+
+        mock_zap.assert_called_once()
+        mock_sqlmap.assert_not_called()
+        assert findings == []
+        assert errors == {}
+
+    @pytest.mark.asyncio
+    async def test_run_active_detection_async_reports_partial_approval_metadata(self) -> None:
+        from agents.detection import run_active_detection_async
+
+        state = self._base_state(approved_tools=["sqlmap"])
+
+        with patch(
+            "agents.detection.run_active_tools",
+            AsyncMock(return_value=([], {})),
+        ):
+            result = await run_active_detection_async(state)
+
+        metadata = result["detection_metadata"]
+        assert metadata["active_tools_run"] is True
+        assert metadata["approved_tools"] == ["sqlmap"]
+        assert metadata["rejected_tools"] == ["zap"]
+
+    @pytest.mark.asyncio
+    async def test_run_active_detection_async_skips_when_all_rejected(self) -> None:
+        from agents.detection import run_active_detection_async
+
+        state = self._base_state(approved_tools=[])
+
+        with patch(
+            "agents.detection.run_active_tools",
+        ) as mock_active:
+            result = await run_active_detection_async(state)
+            mock_active.assert_not_called()
+
+        metadata = result["detection_metadata"]
+        assert metadata["active_tools_run"] is False
+        assert metadata["approved_tools"] == []
+        assert metadata["rejected_tools"] == ["zap", "sqlmap"]

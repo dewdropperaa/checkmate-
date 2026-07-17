@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -17,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from core.config import get_settings
 from core.scope import is_target_authorized
+from core.ssrf import SSRFError, validate_url
 
 logger = logging.getLogger(__name__)
 
@@ -90,18 +92,34 @@ def resolve_binary_path(binary_name: str) -> Path:
     tools_dir = Path(settings.tools_binary_dir)
 
     if sys.platform == "win32":
-        binary_name_with_ext = f"{binary_name}.exe"
+        # Prefer .exe, then npm-style .cmd/.bat wrappers (e.g. retire).
+        name_variants = [
+            f"{binary_name}.exe",
+            f"{binary_name}.cmd",
+            f"{binary_name}.bat",
+            binary_name,
+        ]
     else:
-        binary_name_with_ext = binary_name
+        name_variants = [binary_name]
 
+    binary_path: Path | None = None
     if tools_dir.exists():
-        candidate = tools_dir / binary_name_with_ext
-        if candidate.exists():
-            binary_path = candidate.resolve()
-        else:
-            binary_path = _find_in_path(binary_name_with_ext)
-    else:
-        binary_path = _find_in_path(binary_name_with_ext)
+        for variant in name_variants:
+            candidate = tools_dir / variant
+            if candidate.exists():
+                binary_path = candidate.resolve()
+                break
+
+    if binary_path is None:
+        for variant in name_variants:
+            binary_path = _find_in_path(variant)
+            if binary_path is not None:
+                break
+
+    if binary_path is None:
+        which_hit = shutil.which(binary_name)
+        if which_hit:
+            binary_path = Path(which_hit)
 
     if binary_path is None:
         raise BinaryValidationError(
@@ -109,10 +127,11 @@ def resolve_binary_path(binary_name: str) -> Path:
         )
 
     resolved = binary_path.resolve()
+    allowed_names = {binary_name, *name_variants}
 
     if binary_path.is_symlink():
         link_target = binary_path.resolve()
-        if link_target.name != binary_name and link_target.name != binary_name_with_ext:
+        if link_target.name not in allowed_names:
             raise BinaryValidationError(
                 f"Symlink '{binary_path}' points to unexpected target '{link_target}'"
             )
@@ -143,18 +162,22 @@ def validate_scope(target: str) -> None:
     This is called independently by each tool, regardless of upstream checks,
     as a defense-in-depth measure.
 
-    NOTE: Allowlist enforcement is temporarily disabled (always passes).
-    Keep calling this from tools so re-enabling later is a one-place change.
+    Always enforces SSRF protections (private IP / metadata blocking).
+    Allowlist enforcement is temporarily disabled — see core/scope.py.
 
     Args:
         target: The target hostname or URL to validate
 
     Raises:
-        ScopeViolationError: If target is not authorized (currently never raised)
+        ScopeViolationError: If target is not authorized or fails SSRF checks
     """
-    # Allowlist temporarily disabled — always pass.
+    try:
+        validate_url(target, resolve_dns=True)
+    except SSRFError as exc:
+        raise ScopeViolationError(str(exc)) from exc
+
+    # Allowlist temporarily disabled — always pass after SSRF check.
     # To re-enable: restore the is_target_authorized check below.
-    _ = target
     return
     # if not is_target_authorized(target):
     #     raise ScopeViolationError(
@@ -187,7 +210,11 @@ async def run_subprocess_safely(
     Returns:
         Tuple of (exit_code, stdout, stderr, timed_out)
     """
-    cmd = [str(binary_path)] + args
+    # Windows .cmd/.bat cannot be started via CreateProcess without cmd.exe.
+    if sys.platform == "win32" and binary_path.suffix.lower() in {".cmd", ".bat"}:
+        cmd = ["cmd.exe", "/d", "/c", str(binary_path), *args]
+    else:
+        cmd = [str(binary_path), *args]
     logger.info(f"Executing: {' '.join(cmd)}")
 
     process_env = os.environ.copy()
@@ -197,21 +224,29 @@ async def run_subprocess_safely(
     timed_out = False
 
     try:
-        if sys.platform == "win32":
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=process_env,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
-            )
-        else:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=process_env,
-                start_new_session=True,
+        try:
+            if sys.platform == "win32":
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdin=asyncio.subprocess.DEVNULL,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=process_env,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                )
+            else:
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdin=asyncio.subprocess.DEVNULL,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=process_env,
+                    start_new_session=True,
+                )
+        except NotImplementedError:
+            # Some Windows event loops (SelectorEventLoop) cannot spawn subprocesses.
+            return await asyncio.to_thread(
+                _run_subprocess_sync, cmd, timeout, process_env
             )
 
         try:
@@ -236,6 +271,90 @@ async def run_subprocess_safely(
     stderr = stderr_bytes.decode("utf-8", errors="replace")
 
     return exit_code, stdout, stderr, timed_out
+
+
+def _run_subprocess_sync(
+    cmd: list[str],
+    timeout: float,
+    process_env: dict[str, str],
+) -> tuple[int, str, str, bool]:
+    """Synchronous subprocess fallback for event loops without async subprocess support.
+
+    On timeout the ENTIRE process tree is killed. This is critical: some tools
+    spawn child processes (resolvers, headless browsers, etc.) that inherit the
+    stdout/stderr pipe handles. ``subprocess.run(timeout=...)`` only kills the
+    direct child, so those grandchildren keep the pipes open and the follow-up
+    read blocks forever — which is exactly what makes recon appear "stuck".
+    """
+    popen_kwargs: dict[str, Any] = {
+        # Close stdin: ProjectDiscovery tools (httpx, katana, ...) read targets
+        # from stdin and will block forever on an inherited, never-closed pipe
+        # even when -u/-l is passed. DEVNULL gives them immediate EOF.
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "env": process_env,
+    }
+    if sys.platform == "win32":
+        # New process group lets taskkill /T reliably terminate the whole tree;
+        # CREATE_NO_WINDOW stops console popups per spawned tool.
+        popen_kwargs["creationflags"] = (
+            subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+        )
+    else:
+        popen_kwargs["start_new_session"] = True
+
+    process = subprocess.Popen(cmd, **popen_kwargs)  # noqa: S603 - args are validated
+    try:
+        stdout_bytes, stderr_bytes = process.communicate(timeout=timeout)
+        return (
+            process.returncode or 0,
+            stdout_bytes.decode("utf-8", errors="replace"),
+            stderr_bytes.decode("utf-8", errors="replace"),
+            False,
+        )
+    except subprocess.TimeoutExpired:
+        logger.warning(
+            "Process timed out after %ss, killing process tree", timeout
+        )
+        _kill_process_tree_sync(process)
+        # Drain whatever is buffered, but never block on the (killed) tree.
+        try:
+            stdout_bytes, stderr_bytes = process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            stdout_bytes, stderr_bytes = b"", b""
+        return (
+            -1,
+            (stdout_bytes or b"").decode("utf-8", errors="replace"),
+            (stderr_bytes or b"").decode("utf-8", errors="replace"),
+            True,
+        )
+
+
+def _kill_process_tree_sync(process: subprocess.Popen) -> None:
+    """Kill a process and all of its descendants (synchronous)."""
+    if process.poll() is not None:
+        return
+    try:
+        if sys.platform == "win32":
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+                check=False,
+            )
+        else:
+            try:
+                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                process.kill()
+    except Exception as e:  # noqa: BLE001 - best-effort cleanup
+        logger.warning("Failed to kill process tree: %s", e)
+        try:
+            process.kill()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 async def _kill_process_tree(process: asyncio.subprocess.Process) -> None:

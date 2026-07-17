@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,7 +15,11 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "sentinel-scan"
+    app_name: str = "checkmate"
+    app_env: str = Field(
+        default="development",
+        description="Runtime environment: development, staging, or production",
+    )
     debug: bool = False
     log_level: str = "INFO"
 
@@ -27,6 +31,44 @@ class Settings(BaseSettings):
 
     openai_api_key: str | None = Field(default=None, repr=False)
     anthropic_api_key: str | None = Field(default=None, repr=False)
+
+    # AI Security Copilot (ai_synthesis stage). Keys are optional — when none of
+    # the configured providers have a key, the stage is skipped gracefully.
+    gemini_api_key: str | None = Field(default=None, repr=False)
+    groq_api_key: str | None = Field(default=None, repr=False)
+    ai_llm_providers: str = Field(
+        default="gemini,groq",
+        description=(
+            "Comma-separated ordered LLM provider list for ai_synthesis. "
+            "Known providers: gemini, groq, openai, anthropic."
+        ),
+    )
+    ai_synthesis_timeout_seconds: float = Field(
+        default=15.0,
+        description="Per-provider timeout in seconds for ai_synthesis LLM calls",
+    )
+    ai_synthesis_max_llm_calls: int = Field(
+        default=2,
+        ge=1,
+        le=5,
+        description="Hard cap on LLM calls per scan (summary+roadmap + grader)",
+    )
+    gemini_model: str = Field(
+        default="gemini-2.5-flash",
+        description="Gemini model id used by the primary ai_synthesis provider",
+    )
+    groq_model: str = Field(
+        default="llama-3.3-70b-versatile",
+        description="Groq model id used by the fallback ai_synthesis provider",
+    )
+    openai_model: str = Field(
+        default="gpt-4o-mini",
+        description="OpenAI model id when openai is listed in ai_llm_providers",
+    )
+    anthropic_model: str = Field(
+        default="claude-3-5-haiku-latest",
+        description="Anthropic model id when anthropic is listed in ai_llm_providers",
+    )
 
     # Tool execution settings
     tools_binary_dir: str = Field(
@@ -152,6 +194,31 @@ class Settings(BaseSettings):
         description="Delay between header check requests (seconds)",
     )
 
+    # Active finding verification: re-fetch each finding's URL and corroborate
+    # it against the live HTTP response (headers + body) so every finding gets a
+    # deterministic confirmed/refuted verdict instead of a Firecrawl-dependent
+    # "unverified"/"unconfirmed" guess.
+    verification_enabled: bool = Field(
+        default=True,
+        description="Actively re-check each finding against the live response",
+    )
+    verification_timeout: float = Field(
+        default=15.0,
+        description="Timeout in seconds for a single verification HTTP request",
+    )
+    verification_max_concurrency: int = Field(
+        default=8,
+        description="Maximum concurrent verification HTTP requests",
+    )
+    verification_max_urls: int = Field(
+        default=200,
+        description="Maximum distinct finding URLs to re-fetch during verification",
+    )
+    verification_max_body_bytes: int = Field(
+        default=2_000_000,
+        description="Maximum response body bytes to inspect during verification",
+    )
+
     # OWASP ZAP settings
     zap_api_url: str = Field(
         default="http://zap:8080",
@@ -201,6 +268,68 @@ class Settings(BaseSettings):
         default=20,
         description="Maximum concurrently running scans across all clients",
     )
+    scan_timeout_seconds: float = Field(
+        default=1800.0,
+        description="Maximum wall-clock seconds for a scan before it is marked failed",
+    )
+    report_max_findings: int = Field(
+        default=500,
+        description="Maximum findings rendered in report artifacts (truncation cap)",
+    )
+
+    # Firebase Admin (server-side only — never NEXT_PUBLIC_ / never commit JSON keys)
+    firebase_project_id: str | None = Field(
+        default=None,
+        description="Firebase project ID used to verify ID tokens",
+    )
+    firebase_credentials_path: str | None = Field(
+        default=None,
+        repr=False,
+        description="Path to Firebase service-account JSON (server secret)",
+    )
+    firebase_credentials_json: str | None = Field(
+        default=None,
+        repr=False,
+        description="Inline Firebase service-account JSON string (server secret)",
+    )
+    # When true, /scan and scan sub-routes require a verified Firebase ID token.
+    # Leave false so the Chrome extension can keep using X-API-Key during migration.
+    require_firebase_auth: bool = Field(
+        default=False,
+        description="Require Firebase ID tokens on protected scan routes",
+    )
+
+    # Tool reliability
+    require_toolchain_at_startup: bool = Field(
+        default=True,
+        description=(
+            "When true, the API refuses to start (and rejects scans) unless every "
+            "required security tool binary and ZAP are available."
+        ),
+    )
+    tool_retry_attempts: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Number of attempts for each tool run before marking it failed",
+    )
+    tool_retry_backoff_seconds: float = Field(
+        default=2.0,
+        ge=0.5,
+        le=30.0,
+        description="Initial backoff between tool retries (doubles each attempt)",
+    )
+
+    @field_validator("app_env")
+    @classmethod
+    def _normalize_app_env(cls, value: str) -> str:
+        normalized = (value or "development").strip().lower()
+        allowed = {"development", "staging", "production", "test"}
+        if normalized not in allowed:
+            raise ValueError(
+                f"app_env must be one of {sorted(allowed)}, got '{value}'"
+            )
+        return normalized
 
     @property
     def authorized_target_list(self) -> list[str]:
@@ -208,7 +337,52 @@ class Settings(BaseSettings):
             return []
         return [t.strip() for t in self.authorized_targets.split(",") if t.strip()]
 
+    @property
+    def ai_llm_provider_list(self) -> list[str]:
+        """Ordered provider ids for ai_synthesis (empty entries stripped)."""
+        if not self.ai_llm_providers.strip():
+            return []
+        return [
+            p.strip().lower()
+            for p in self.ai_llm_providers.split(",")
+            if p.strip()
+        ]
+
 
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def validate_startup_settings(settings: Settings | None = None) -> None:
+    """Fail fast when production is misconfigured.
+
+    Raises ValueError with a clear message so the process exits at startup
+    rather than failing confusingly on the first paid API call.
+    """
+    settings = settings or get_settings()
+    if settings.app_env != "production":
+        return
+
+    missing: list[str] = []
+    if settings.firecrawl_enabled and not settings.firecrawl_api_key:
+        missing.append("FIRECRAWL_API_KEY (required when FIRECRAWL_ENABLED=true)")
+    if not settings.zap_api_key:
+        missing.append("ZAP_API_KEY")
+
+    if not settings.firebase_project_id:
+        missing.append("FIREBASE_PROJECT_ID")
+    if not (
+        settings.firebase_credentials_json
+        or settings.firebase_credentials_path
+    ):
+        missing.append(
+            "FIREBASE_CREDENTIALS_JSON or FIREBASE_CREDENTIALS_PATH "
+            "(Firebase Admin service account — never a client web API key)"
+        )
+
+    if missing:
+        raise ValueError(
+            "Production startup validation failed. Missing required settings: "
+            + "; ".join(missing)
+        )

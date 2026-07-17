@@ -30,7 +30,10 @@ from urllib.parse import urlparse
 import httpx
 from pydantic import BaseModel, Field, field_validator
 
+from core.config import get_settings
 from core.scope import is_target_authorized
+from core.ssrf import SSRFError, create_safe_async_client, validate_url
+from core.retries import is_retryable_error, run_with_retries
 from tools.base import ToolResult, validate_scope
 from tools.schemas import Finding, Severity
 
@@ -114,16 +117,20 @@ class HeaderChecker:
     name = "header-checks"
     description = "HTTP security header and cookie analyzer"
 
-    def __init__(self, timeout: float = 30.0, rate_limit_delay: float = 0.5):
-        self.timeout = timeout
-        self.rate_limit_delay = rate_limit_delay
+    def __init__(self, timeout: float | None = None, rate_limit_delay: float | None = None):
+        settings = get_settings()
+        self.timeout = timeout if timeout is not None else settings.header_check_timeout
+        self.rate_limit_delay = (
+            rate_limit_delay
+            if rate_limit_delay is not None
+            else settings.header_check_rate_limit_delay
+        )
         self._client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None:
-            self._client = httpx.AsyncClient(
+            self._client = create_safe_async_client(
                 timeout=self.timeout,
-                follow_redirects=True,
                 verify=False,
             )
         return self._client
@@ -173,13 +180,35 @@ class HeaderChecker:
             target = f"https://{target}"
 
         origin = normalize_origin(target)
-        parsed = urlparse(origin)
-        host = parsed.hostname or ""
-        validate_scope(host)
+        validate_scope(origin)
+        try:
+            validate_url(origin, resolve_dns=True)
+        except SSRFError as exc:
+            return ToolResult(
+                tool_name=self.name,
+                target=origin,
+                success=False,
+                error=str(exc),
+            )
 
         try:
             client = await self._get_client()
-            response = await client.get(origin)
+
+            async def _fetch() -> httpx.Response:
+                response = await client.head(origin)
+                if response.status_code in (405, 501):
+                    response = await client.get(
+                        origin,
+                        headers={"Accept-Encoding": "identity"},
+                    )
+                return response
+
+            response = await run_with_retries(
+                self.name,
+                _fetch,
+                max_attempts=get_settings().tool_retry_attempts,
+                backoff_seconds=get_settings().header_check_rate_limit_delay or 0.5,
+            )
             findings = self._analyze_response(origin, response)
             findings = self._with_seen_at(findings, [target] if target != origin else [origin])
 
@@ -204,7 +233,22 @@ class HeaderChecker:
                 error=f"Request timed out after {self.timeout}s",
                 timed_out=True,
             )
+        except SSRFError as exc:
+            return ToolResult(
+                tool_name=self.name,
+                target=origin,
+                success=False,
+                error=str(exc),
+            )
         except httpx.RequestError as e:
+            if is_retryable_error(str(e)):
+                return ToolResult(
+                    tool_name=self.name,
+                    target=origin,
+                    success=False,
+                    error=f"Request failed: {str(e)}",
+                    timed_out=True,
+                )
             return ToolResult(
                 tool_name=self.name,
                 target=origin,
@@ -260,10 +304,16 @@ class HeaderChecker:
 
             await asyncio.sleep(self.rate_limit_delay)
 
+        all_origins_failed = bool(origin_groups) and len(errors) == len(origin_groups)
         return ToolResult(
             tool_name=self.name,
             target="batch",
-            success=True,
+            success=not all_origins_failed,
+            error=(
+                f"All {len(origin_groups)} origin checks failed"
+                if all_origins_failed
+                else None
+            ),
             data={
                 "findings": [f.model_dump_for_state() for f in all_findings],
                 "finding_count": len(all_findings),

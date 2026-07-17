@@ -31,15 +31,27 @@ GOBIN="${TOOLS_DIR}" go install -v github.com/projectdiscovery/httpx/cmd/httpx@l
 echo "Installing katana..."
 GOBIN="${TOOLS_DIR}" go install -v github.com/projectdiscovery/katana/cmd/katana@latest
 
+echo "Installing nuclei..."
+GOBIN="${TOOLS_DIR}" go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+
 # Verify installations
 echo ""
 echo "Verifying installations..."
 "${TOOLS_DIR}/subfinder" -version
 "${TOOLS_DIR}/httpx" -version
 "${TOOLS_DIR}/katana" -version
+"${TOOLS_DIR}/nuclei" -version
+
+echo ""
+echo "Updating nuclei templates..."
+"${TOOLS_DIR}/nuclei" -update-templates || true
 
 echo ""
 echo "Tools installed successfully to ${TOOLS_DIR}"
+echo ""
+echo "Also install (not covered by this script):"
+echo "  npm install -g retire"
+echo "  Start OWASP ZAP daemon on ZAP_API_URL (e.g. docker compose up zap)"
 echo ""
 echo "Add to your environment:"
 echo "  export TOOLS_BINARY_DIR=${TOOLS_DIR}"
