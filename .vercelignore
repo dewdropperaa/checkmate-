@@ -1,0 +1,16 @@
+# Keep CLI deploys under Vercel's upload limit (git deploys ignore this).
+backend
+extension
+node_modules
+web/node_modules
+web/.next
+**/.venv
+**/venv
+**/__pycache__
+**/.pytest_cache
+**/tools-bin
+**/*.pyc
+checkmate-*-firebase-adminsdk-*.json
+.env
+.env.*
+!.env.example
