@@ -84,7 +84,7 @@
       },
       "agencyReports": {
         "title": "Professional Reports",
-        "body": "Beautiful PDF exports with your findings, recommendations, and remediation steps. White-label coming soon."
+        "body": "Beautiful PDF exports with your findings, recommendations, and remediation steps. Agency plans can white-label reports with your logo and name."
       }
     }
   },
@@ -126,6 +126,7 @@
     "pdfHtmlReports": "PDF / HTML / MD reports",
     "chromeExtension": "Chrome extension",
     "activeTesting": "Active tests (ZAP / sqlmap)",
+    "authenticatedScanning": "Authenticated scanning",
     "authorizedTargets": "Authorized targets only",
     "whiteLabelReports": "White-label reports",
     "multiClientWorkspace": "Multi-client workspace",
@@ -182,7 +183,7 @@
       },
       {
         "q": "Can I use checkmate for my clients?",
-        "a": "Yes! The Agency plan includes features for managing multiple clients, including white-label PDF reports (coming soon). Many digital agencies use checkmate for client security assessments."
+        "a": "Yes! The Agency plan includes features for managing multiple clients, including white-label PDF reports with your agency logo and name. Many digital agencies use checkmate for client security assessments."
       }
     ]
   },
@@ -225,10 +226,20 @@
     "backToSignIn": "Back to sign in",
     "backHome": "Back to checkmate",
     "checkInbox": "Check your inbox — we sent a verification link to confirm your email. You can sign in after verifying.",
+    "checkSpam": "Didn't get it? Check your spam or junk folder.",
     "verifyEmailTitle": "Verify your email",
     "verifyEmailBody": "We sent a verification link to your inbox. Open it to unlock your dashboard.",
     "resetSentTitle": "Check your email",
     "resetSent": "If an account exists for that email, a password reset link is on its way.",
+    "resetPasswordTitle": "Choose a new password",
+    "resetPasswordSubtitle": "Enter a new password for your account, then sign in.",
+    "resetPasswordSubmit": "Update password",
+    "resetPasswordSuccessTitle": "Password updated",
+    "resetPasswordSuccess": "Your password was reset. Sign in with your new password.",
+    "resetPasswordMissingCode": "This reset link is missing or invalid. Request a new password reset from the sign-in page.",
+    "resetPasswordInvalidCode": "This reset link has expired or already been used. Request a new one from the sign-in page.",
+    "newPassword": "New password",
+    "confirmNewPassword": "Confirm new password",
     "checkingSession": "Checking session…",
     "redirecting": "Redirecting…",
     "dashboardTitle": "Dashboard",
@@ -245,7 +256,10 @@
       "userNotFound": "Incorrect email or password.",
       "invalidEmail": "Enter a valid email address.",
       "tooManyRequests": "Too many attempts. Please wait {seconds} seconds before trying again.",
-      "accountExistsWithDifferentCredential": "This email is already registered with a different sign-in method. Sign in with your original method (email/password), then you can link Google later.",
+      "accountExistsWithDifferentCredential": "This email is already registered with a different sign-in method. Use your original method below — usually email and password — instead of Google.",
+      "accountExistsUsePassword": "An account already exists for {email}. Sign in with email and password (not Google).",
+      "accountExistsUseGoogle": "An account already exists for {email}. Continue with Google instead of email/password.",
+      "accountExistsGeneric": "An account already exists for {email} with a different sign-in method. Use your original method to sign in.",
       "popupClosedByUser": "Google sign-in was cancelled.",
       "popupBlocked": "Your browser blocked the sign-in popup. Allow popups for this site and try again.",
       "networkRequestFailed": "Network error. Check your connection and try again.",
@@ -295,16 +309,26 @@
     "statusError": "Unable to load scan details.",
     "history": "Scan history",
     "historyLoading": "Loading scans…",
+    "accountSyncing": "Syncing account…",
     "historyError": "Unable to load scan history.",
     "emptyHistory": "No scans yet. Start your first scan above.",
     "liveScan": "Live scan",
+    "liveScanPage": {
+      "backDashboard": "Back to dashboard",
+      "loading": "Connecting to scan…",
+      "notFound": "Scan not found.",
+      "live": "Live"
+    },
     "awaitingApproval": "Waiting for your approval",
     "approvalTitle": "Your decision is required",
     "approvalHelp": "Passive checks are complete. Active tests can send intrusive requests to the target site. Only approve them when you have the necessary permission.",
+    "approvalCountdown": "Auto-approving the checked tools in {seconds}s unless you cancel or reject.",
+    "approvalCancelAuto": "Cancel auto-approve",
     "approveActiveTests": "Approve active tests",
     "skipActiveTests": "Skip active tests",
     "saving": "Saving…",
     "approvalError": "Unable to save your decision.",
+    "approvalToolsLabel": "Active tools to allow",
     "view": "View",
     "rescan": "Re-scan",
     "report": "Scan report",
@@ -335,6 +359,38 @@
       "scan_limit": "Your plan's monthly scan limit has been reached.",
       "pricingLink": "View pricing"
     },
+    "authScan": {
+      "title": "Authenticated scanning",
+      "help": "Optionally provide login credentials so scans can crawl and test pages behind authentication.",
+      "lockedBadge": "Pro / Agency",
+      "locked": "Authenticated scanning is available on Pro and Agency plans.",
+      "loading": "Loading sites…",
+      "noSites": "Run a scan first to register a site, then configure credentials here.",
+      "siteLabel": "Site",
+      "configured": "credentials saved",
+      "testAccountTitle": "Use a dedicated test account",
+      "testAccountBody": "Strongly recommended: do not use a real user or admin account. Active tests may submit forms and interact with account data. Prefer a disposable test account with limited privileges.",
+      "loginUrl": "Login page URL",
+      "username": "Username / email",
+      "usernamePlaceholder": "test-user@example.com",
+      "password": "Password",
+      "usernameField": "Username field name",
+      "passwordField": "Password field name",
+      "fieldNameHelp": "HTML form name attributes (required by ZAP form-based authentication), not CSS selectors.",
+      "excludedPaths": "Excluded destructive paths",
+      "excludedHelp": "One path per line. Recon auto-suggests paths like /delete-account; review and keep destructive flows excluded.",
+      "consent": "I confirm I am authorized to use these specific credentials for security testing, and I understand active tests may interact with this account's data.",
+      "save": "Save credentials",
+      "remove": "Remove credentials",
+      "saved": "Credentials encrypted and stored.",
+      "removed": "Credentials removed.",
+      "loadError": "Unable to load sites.",
+      "saveError": "Unable to save credentials.",
+      "removeError": "Unable to remove credentials.",
+      "approvalAs": "Authenticated scan will run as: {username}.",
+      "approvalExcluded": "Excluded destructive paths: {paths}.",
+      "approvalFallback": "Credentials are stored but authenticated scanning is disabled for this plan — active tests would run as an unauthenticated visitor."
+    },
     "pagination": {
       "label": "History pagination",
       "previous": "Previous",
@@ -350,6 +406,48 @@
       "verification": "Verification",
       "scoring": "Scoring",
       "reporting": "Reporting"
+    },
+    "findingsTitle": "Findings",
+    "findingsEmpty": "No findings on this vulnerability scan.",
+    "findingsError": "Unable to load findings for Verify Fix.",
+    "verifyFix": {
+      "action": "Verify Fix",
+      "actionFr": "VÉRIFIER LE CORRECTIF",
+      "checking": "Checking…",
+      "error": "Unable to verify this finding.",
+      "rateLimited": "Verify Fix was run recently for this finding. Wait a few minutes and try again.",
+      "history": "Verification history",
+      "attempts": "{count} attempts",
+      "results": {
+        "fixed": "Fixed",
+        "stillPresent": "Still present",
+        "changed": "Changed"
+      }
+    },
+    "coverage": {
+      "title": "What this scan covered",
+      "limitationsHeading": "What this scan does not cover",
+      "modulesRun": "Modules run successfully",
+      "modulesFailed": "Modules failed",
+      "modulesSkipped": "Modules skipped",
+      "modulesNotApplicable": "Modules not applicable",
+      "modulesRejected": "Active modules rejected",
+      "none": "None",
+      "disclaimer": "This is an automated vulnerability scan, not a manual penetration test. It does not test complex business logic, does not attempt social engineering, and authenticated-scan coverage is limited to the account and paths you configured. For a comprehensive security assessment, consider a manual penetration test from a qualified provider in addition to this ongoing security monitoring."
+    },
+    "riskTrend": {
+      "title": "Risk score over time",
+      "loading": "Loading trend…",
+      "empty": "Run vulnerability scans to see risk trends for your sites.",
+      "forTarget": "Site: {target}",
+      "allSites": "All monitored sites",
+      "singleScan": "Single scan — trend appears after a second scan",
+      "scans": "{count} scans",
+      "riskScore": "Risk score",
+      "findings": "Findings (scaled)",
+      "criticalHigh": "Critical + high",
+      "ariaLabel": "Risk trend chart, latest score {score}, {count} scans",
+      "selectSite": "Trend for site"
     }
   },
   "legal": {

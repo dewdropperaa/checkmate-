@@ -162,6 +162,16 @@
   line-height: 1.35;
 }
 
+.conflictAlert {
+  margin: 0;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--amber);
+  background: var(--amber-a05);
+  color: var(--amber);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
 .formAlert:empty,
 .fieldError:empty {
   min-height: 0;

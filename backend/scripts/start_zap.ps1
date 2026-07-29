@@ -1,7 +1,11 @@
-﻿# Start OWASP ZAP daemon for local checkmate development.
-# Matches .env with empty ZAP_API_KEY (api.disablekey=true).
-# Uses -silent so first-run update checks don't block API startup.
+﻿# Start OWASP ZAP daemon for local checkmate development ONLY.
+# Uses api.disablekey=true — NEVER use this configuration in production.
+# Production Compose starts ZAP with api.disablekey=false and a required ZAP_API_KEY.
+# Prefer Docker for local API access:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up zap
 $ErrorActionPreference = "Stop"
+Write-Warning "DEV ONLY: starting ZAP with api.disablekey=true on 127.0.0.1:8080"
+
 $zapDir = "C:\Program Files\ZAP\Zed Attack Proxy"
 $zapBat = Join-Path $zapDir "zap.bat"
 if (-not (Test-Path $zapBat)) {

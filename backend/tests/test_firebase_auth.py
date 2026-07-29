@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import pytest
+import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 
@@ -31,11 +33,12 @@ def _fake_user(
     uid: str = "firebase-uid-1",
     email: str = "user@example.com",
     provider: str = "password",
+    email_verified: bool = True,
 ) -> AuthenticatedUser:
     return AuthenticatedUser(
         uid=uid,
         email=email,
-        email_verified=True,
+        email_verified=email_verified,
         name="Test User",
         picture=None,
         sign_in_provider=provider,
@@ -65,6 +68,13 @@ def auth_client(accounts_db, monkeypatch: pytest.MonkeyPatch):
                 uid="google-uid-1",
                 email="g@example.com",
                 provider="google.com",
+            )
+        if token == "unverified-token":
+            return _fake_user(
+                uid="firebase-uid-1",
+                email="user@example.com",
+                provider="password",
+                email_verified=False,
             )
         return _fake_user(
             uid="firebase-uid-1",
@@ -117,6 +127,27 @@ def test_auth_sync_rejects_new_user_without_terms(auth_client: TestClient):
     assert get_user("firebase-uid-1") is None
 
 
+def test_auth_sync_rejects_unverified_new_user(auth_client: TestClient):
+    response = auth_client.post(
+        "/auth/sync",
+        headers={"Authorization": "Bearer unverified-token"},
+        json={"terms_accepted": True, "terms_version": "2026-07-17"},
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"]["error"] == "email_not_verified"
+    assert get_user("firebase-uid-1") is None
+
+
+def test_sensitive_route_rejects_unverified_firebase_user(auth_client: TestClient):
+    response = auth_client.post(
+        "/auth/extension/token",
+        headers={"Authorization": "Bearer unverified-token"},
+        json={},
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"]["error"] == "email_not_verified"
+
+
 def test_auth_sync_is_idempotent(auth_client: TestClient):
     first = auth_client.post(
         "/auth/sync",
@@ -157,6 +188,35 @@ def test_invalid_token_rejected(auth_client: TestClient):
     assert response.json()["detail"]["error"] == "invalid_token"
 
 
+def test_auth_sync_ip_rate_limit_returns_429(auth_client: TestClient):
+    from app import main as api_main
+    from core.config import get_settings
+
+    settings = get_settings()
+    old_ip_limit = settings.auth_rate_limit_max_requests_per_ip
+    old_account_limit = settings.auth_rate_limit_max_requests_per_account
+    settings.auth_rate_limit_max_requests_per_ip = 1
+    settings.auth_rate_limit_max_requests_per_account = 100
+    api_main._auth_rate_limiter._events.clear()  # noqa: SLF001 - isolate boundary test
+    try:
+        first = auth_client.post(
+            "/auth/sync",
+            headers={"Authorization": "Bearer invalid"},
+        )
+        second = auth_client.post(
+            "/auth/sync",
+            headers={"Authorization": "Bearer invalid"},
+        )
+    finally:
+        settings.auth_rate_limit_max_requests_per_ip = old_ip_limit
+        settings.auth_rate_limit_max_requests_per_account = old_account_limit
+        api_main._auth_rate_limiter._events.clear()  # noqa: SLF001
+
+    assert first.status_code == 401
+    assert second.status_code == 429
+    assert second.json()["detail"]["error"] == "auth_rate_limit_exceeded"
+
+
 def test_expired_token_rejected(auth_client: TestClient):
     response = auth_client.post(
         "/auth/sync",
@@ -170,6 +230,68 @@ def test_missing_token_rejected(auth_client: TestClient):
     response = auth_client.post("/auth/sync")
     assert response.status_code == 401
     assert response.json()["detail"]["error"] == "missing_token"
+
+
+def test_atomic_scan_quota_allows_exactly_one_concurrent_trigger(
+    auth_client: TestClient,
+    accounts_db,
+    public_dns: None,
+    fast_scan: None,
+):
+    sync = auth_client.post(
+        "/auth/sync",
+        headers={"Authorization": "Bearer valid-token"},
+        json={"terms_accepted": True, "terms_version": "2026-07-17"},
+    )
+    assert sync.status_code == 200
+    org_id = sync.json()["user"]["org_id"]
+    with sqlite3.connect(accounts_db) as conn:
+        conn.execute(
+            "UPDATE organizations SET max_targets = NULL, scans_per_month = 1 WHERE id = ?",
+            (org_id,),
+        )
+        conn.commit()
+
+    from core.config import get_settings
+
+    settings = get_settings()
+    old_per_client = settings.scan_rate_limit_max_concurrent_per_client
+    old_global = settings.scan_rate_limit_max_concurrent_global
+    old_require_auth = settings.require_firebase_auth
+    settings.scan_rate_limit_max_concurrent_per_client = 10
+    settings.scan_rate_limit_max_concurrent_global = 10
+    settings.require_firebase_auth = True
+
+    payloads = [
+        {"target": "https://race-a.authorized.example.com", "confirmed_authorized": True},
+        {"target": "https://race-b.authorized.example.com", "confirmed_authorized": True},
+    ]
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses = list(
+                pool.map(
+                    lambda payload: auth_client.post(
+                        "/scan",
+                        headers={"Authorization": "Bearer valid-token"},
+                        json=payload,
+                    ),
+                    payloads,
+                )
+            )
+    finally:
+        settings.scan_rate_limit_max_concurrent_per_client = old_per_client
+        settings.scan_rate_limit_max_concurrent_global = old_global
+        settings.require_firebase_auth = old_require_auth
+
+    statuses = sorted(response.status_code for response in responses)
+    assert statuses == [202, 429]
+    errors = [
+        response.json()["detail"]["error"]
+        for response in responses
+        if response.status_code == 429
+    ]
+    assert errors == ["scan_quota_exceeded"]
 
 
 def test_verify_id_token_rejects_empty():

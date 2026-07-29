@@ -12,10 +12,19 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "")
 os.environ.setdefault("GEMINI_API_KEY", "")
 os.environ.setdefault("GROQ_API_KEY", "")
 
+# Fernet master key for credential envelope encryption in tests.
+# (Not a production secret — tests only.)
+os.environ.setdefault(
+    "CREDENTIALS_MASTER_KEY",
+    "l71TjiEvg6zAX8J9cDcBV6CRcQHLKNE5YLpVa1oVK1Q=",
+)
+
 # Never hit the real Firecrawl API from the test suite. Env vars take
 # precedence over the .env file, so this overrides any local key.
 os.environ["FIRECRAWL_ENABLED"] = "false"
 os.environ["FIRECRAWL_API_KEY"] = ""
+os.environ.setdefault("APP_ENV", "test")
+os.environ.setdefault("DODO_ENVIRONMENT", "test")
 os.environ.setdefault("REQUIRE_TOOLCHAIN_AT_STARTUP", "false")
 os.environ.setdefault("WATCH_SCHEDULER_ENABLED", "false")
 os.environ.setdefault("RESEND_API_KEY", "")

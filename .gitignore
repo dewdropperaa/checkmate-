@@ -35,3 +35,16 @@ Thumbs.db
 
 # Vercel CLI local link
 .vercel
+
+# Terraform
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfvars
+!**/*.tfvars.example
+**/crash.log
+**/override.tf
+**/*_override.tf
+terraform/cloudflare/origin-lock/*.crt
+terraform/cloudflare/origin-lock/*.key
+terraform/cloudflare/origin-lock/*.pem

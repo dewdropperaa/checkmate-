@@ -101,11 +101,18 @@ class TestWrapperFailureMatrix:
             settings.tool_retry_backoff_seconds = old_backoff
 
         assert resolved_name == tool_name
-        assert result is None
-        assert error is not None
-        assert "Execution error" in error
-        assert "timed out" in error.lower()
-        assert calls["n"] == 3
+        if tool_name == "zap":
+            # Full ZAP active-scan timeouts are not retried (too expensive).
+            assert result is not None
+            assert result.timed_out is True
+            assert error is None
+            assert calls["n"] == 1
+        else:
+            assert result is None
+            assert error is not None
+            assert "Execution error" in error
+            assert "timed out" in error.lower()
+            assert calls["n"] == 3
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("tool_name", _TOOLS)

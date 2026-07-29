@@ -291,12 +291,20 @@ def call_with_fallback(
     temperature: float = DEFAULT_TEMPERATURE,
     client: httpx.Client | None = None,
     call_fn: Callable[..., LLMResponse] | None = None,
+    scan_id: str | None = None,
+    org_id: str | None = None,
 ) -> LLMCallResult:
     """Try configured providers in order; return first success or provider_used=none."""
     settings = settings or get_settings()
     providers = configured_providers(settings)
     if not providers:
         return LLMCallResult(response=None, provider_used="none", error="no_api_key")
+
+    correlation = {
+        key: value
+        for key, value in (("scan_id", scan_id), ("org_id", org_id))
+        if value
+    }
 
     invoker = call_fn or call_provider
     last_error: str | None = None
@@ -315,6 +323,7 @@ def call_with_fallback(
                     "event": "ai_llm_provider_served",
                     "provider": provider,
                     "model": response.model,
+                    **correlation,
                 },
             )
             return LLMCallResult(response=response, provider_used=provider, error=None)
@@ -327,6 +336,7 @@ def call_with_fallback(
                     "provider": provider,
                     "error": last_error,
                     "retryable": exc.retryable,
+                    **correlation,
                 },
             )
             if not exc.retryable:
@@ -338,7 +348,11 @@ def call_with_fallback(
             last_error = f"unexpected {provider} error: {exc}"
             logger.exception(
                 "ai_llm_provider_unexpected",
-                extra={"event": "ai_llm_provider_unexpected", "provider": provider},
+                extra={
+                    "event": "ai_llm_provider_unexpected",
+                    "provider": provider,
+                    **correlation,
+                },
             )
             continue
 

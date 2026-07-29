@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
+import hmac
 import json
 import logging
 import sys
 import uuid
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+import httpx
 from fastapi import Body, Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
@@ -21,38 +25,54 @@ from pydantic import BaseModel, Field
 from agents.orchestrator import get_orchestrator, resolve_approved_tools
 from core.accounts import (
     create_extension_token,
-    create_scan_record,
     deactivate_site,
+    delete_site_auth_credentials,
     extension_token_to_dict,
     find_org_id_by_email,
-    get_or_create_user_from_firebase,
+    claim_webhook_event,
     get_org_scan_usage,
     get_organization,
+    get_scan_record,
+    get_site_auth_credentials,
     get_user,
+    list_stale_active_scans,
+    list_org_risk_trend,
     list_org_scans,
     list_org_sites,
     list_org_targets,
     init_accounts_schema,
-    org_has_target,
+    CREATOR_PLAN_ID,
+    org_has_creator_member,
+    QuotaExceededError,
+    reserve_scan_quota_and_create_records,
     resolve_extension_token,
     revoke_extension_tokens_for_user,
     scan_to_dict,
     set_watch_emails_enabled,
+    site_auth_public_dict,
     site_to_dict,
     update_organization_plan,
     update_scan_record,
-    upsert_site,
+    update_site_excluded_paths,
+    upsert_site_auth_credentials,
     upsert_user_from_firebase,
     user_to_dict,
 )
 from core.audit import log_scan_triggered
 from core.config import get_settings, validate_startup_settings
+from core.credential_crypto import encrypt_credentials, redact_username
 from core.firebase_auth import (
     AuthenticatedUser,
+    ensure_email_verified,
     require_firebase_user,
+    require_verified_firebase_user,
     try_verify_bearer_token,
 )
-from core.plans import plan_supports_watch, watch_cadence_for_plan
+from core.plans import (
+    can_use_authenticated_scanning,
+    plan_supports_watch,
+    watch_cadence_for_plan,
+)
 from core.watch_agent.scheduler import (
     on_plan_changed,
     on_site_added,
@@ -68,7 +88,12 @@ from core.toolchain import (
 )
 from core.logging import bind_request_id, configure_logging, get_request_id
 from core.scope import enforce_scope
-from core.ssrf import SSRFError, normalize_scan_target, validate_scan_target
+from core.ssrf import (
+    SSRFError,
+    normalize_scan_target,
+    validate_login_url_for_site,
+    validate_scan_target,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -235,6 +260,8 @@ class ScanReportResponse(BaseModel):
     findings: list[dict[str, Any]]
     report: dict[str, Any] | None
     generated_at: str
+    verify_fix_summaries: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    coverage: dict[str, Any] | None = None
 
 
 class ScanHistoryItem(BaseModel):
@@ -244,6 +271,8 @@ class ScanHistoryItem(BaseModel):
     current_node: str | None = None
     overall_risk_score: float | None = None
     severity: str | None = None
+    findings_count: int | None = None
+    critical_high_count: int | None = None
     created_at: str
     updated_at: str
 
@@ -258,6 +287,34 @@ class ScanHistoryResponse(BaseModel):
     scans_this_month: int
     targets: list[str]
 
+
+class RiskTrendPoint(BaseModel):
+    scan_id: str
+    target: str
+    created_at: str
+    overall_risk_score: float
+    severity: str | None = None
+    findings_count: int | None = None
+    critical_high_count: int | None = None
+
+
+class RiskTrendResponse(BaseModel):
+    target: str | None = None
+    points: list[RiskTrendPoint]
+
+
+class VerifyFixResponse(BaseModel):
+    scan_id: str
+    finding_id: str
+    result: str
+    evidence: str | None = None
+    verification: dict[str, Any] | None = None
+    confidence: float | None = None
+    checked_at: str
+    quota_consumed: bool = False
+    history: list[dict[str, Any]] = Field(default_factory=list)
+    attempt_count: int = 0
+    finding: dict[str, Any] = Field(default_factory=dict)
 
 class ScanRateLimiter:
     """In-memory /scan limiter by client identity and global concurrency."""
@@ -327,6 +384,42 @@ class ScanRateLimiter:
                 self._active_per_client[client_id] -= 1
             if self._active_global > 0:
                 self._active_global -= 1
+
+
+class SlidingWindowRateLimiter:
+    """Small in-memory limiter for low-cost auth/session endpoints."""
+
+    def __init__(self, *, error_code: str) -> None:
+        self._lock = asyncio.Lock()
+        self._events: dict[str, deque[float]] = defaultdict(deque)
+        self._error_code = error_code
+
+    async def acquire(
+        self,
+        key: str,
+        *,
+        max_requests: int,
+        window_seconds: int,
+        label: str,
+    ) -> None:
+        now = asyncio.get_running_loop().time()
+        window = float(window_seconds)
+        async with self._lock:
+            events = self._events[key]
+            while events and (now - events[0]) > window:
+                events.popleft()
+            if len(events) >= max_requests:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail={
+                        "error": self._error_code,
+                        "message": (
+                            f"Too many auth requests for this {label}. "
+                            f"Limit: {max_requests} per {int(window)}s."
+                        ),
+                    },
+                )
+            events.append(now)
 
 
 def _extract_bearer_or_api_key(request: Request) -> str:
@@ -415,13 +508,37 @@ def _resolve_scan_account(request: Request, firebase_user: AuthenticatedUser | N
 
 
 def _account_for_firebase_user(user: AuthenticatedUser):
-    return get_or_create_user_from_firebase(
-        uid=user.uid,
-        email=user.email,
-        display_name=user.name,
-        email_verified=user.email_verified,
-        auth_provider=user.sign_in_provider,
-    )
+    record = get_user(user.uid)
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": "user_not_found",
+                "message": "Complete account sync with terms acceptance first.",
+            },
+        )
+    return record
+
+
+def _ensure_verified_for_sensitive_action(
+    firebase_user: AuthenticatedUser | None,
+    account,
+) -> None:
+    """Require a verified email for scans, tokens, and org mutations."""
+    if firebase_user is not None:
+        ensure_email_verified(firebase_user)
+        return
+    if account is not None and not account.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "email_not_verified",
+                "message": (
+                    "Verify your email address before using this feature. "
+                    "Check your inbox (and spam folder) for the verification link."
+                ),
+            },
+        )
 
 
 def _risk_severity(score: float | None) -> str | None:
@@ -448,6 +565,14 @@ async def _sync_persisted_scan(scan_id: str) -> dict[str, Any] | None:
     values = dict(snapshot.values) if (snapshot and snapshot.values) else {}
     score_value = (values.get("severity_scores") or {}).get("overall_risk_score")
     score = float(score_value) if score_value is not None else None
+    severity_counts = (values.get("severity_scores") or {}).get("severity_counts") or {}
+    findings = values.get("findings") or []
+    findings_count = len(findings) if findings else None
+    critical_high = None
+    if isinstance(severity_counts, dict) and severity_counts:
+        critical_high = int(severity_counts.get("critical") or 0) + int(
+            severity_counts.get("high") or 0
+        )
     if summary.get("pending_interrupt") is not None:
         display_status = "awaiting_approval"
     elif summary.get("is_complete"):
@@ -460,16 +585,42 @@ async def _sync_persisted_scan(scan_id: str) -> dict[str, Any] | None:
         current_node=summary.get("current_node"),
         overall_risk_score=score,
         severity=_risk_severity(score),
+        findings_count=findings_count,
+        critical_high_count=critical_high,
     )
     return {
         **summary,
         "status": display_status,
         "overall_risk_score": score,
         "severity": _risk_severity(score),
+        "findings_count": findings_count,
+        "critical_high_count": critical_high,
     }
 
 
 _scan_rate_limiter = ScanRateLimiter()
+_auth_rate_limiter = SlidingWindowRateLimiter(error_code="auth_rate_limit_exceeded")
+
+
+async def _enforce_auth_ip_rate_limit(request: Request) -> None:
+    settings = get_settings()
+    host = request.client.host if request.client else "unknown"
+    await _auth_rate_limiter.acquire(
+        f"ip:{host}",
+        max_requests=int(settings.auth_rate_limit_max_requests_per_ip),
+        window_seconds=int(settings.auth_rate_limit_window_seconds),
+        label="IP",
+    )
+
+
+async def _enforce_auth_account_rate_limit(user: AuthenticatedUser) -> None:
+    settings = get_settings()
+    await _auth_rate_limiter.acquire(
+        f"account:{user.uid}",
+        max_requests=int(settings.auth_rate_limit_max_requests_per_account),
+        window_seconds=int(settings.auth_rate_limit_window_seconds),
+        label="account",
+    )
 
 
 class InflightScanRegistry:
@@ -523,6 +674,12 @@ async def lifespan(app: FastAPI):
     init_accounts_schema()
     orchestrator = get_orchestrator()
     await orchestrator.setup()
+    recovered_scans = await orchestrator.recover_stale_scans()
+    if recovered_scans:
+        logger.warning(
+            "Recovered stale in-progress scans after startup",
+            extra={"scan_ids": recovered_scans},
+        )
     # Warm templates in the background so the API accepts connections immediately.
     # Blocking here left the port bound-but-dead for up to ~180s (connection refused).
     warm_task = asyncio.create_task(warm_nuclei_templates())
@@ -610,6 +767,8 @@ class AuthSyncBody(BaseModel):
 
 @app.post("/auth/sync")
 async def auth_sync(
+    request: Request,
+    _ip_rate_limit: None = Depends(_enforce_auth_ip_rate_limit),
     user: AuthenticatedUser = Depends(require_firebase_user),
     body: AuthSyncBody = Body(default_factory=AuthSyncBody),
 ):
@@ -619,7 +778,20 @@ async def auth_sync(
     web pricing catalog). The Firebase UID comes from the verified ID token —
     never from the request body. New accounts must include terms_accepted=true.
     """
+    del request, _ip_rate_limit
+    await _enforce_auth_account_rate_limit(user)
     existing = get_user(user.uid)
+    if existing is None and not user.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "email_not_verified",
+                "message": (
+                    "Verify your email address before signing in. "
+                    "Check your inbox (and spam folder) for the verification link."
+                ),
+            },
+        )
     if existing is None and not body.terms_accepted:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -673,7 +845,9 @@ class ExtensionTokenCreateBody(BaseModel):
 
 @app.post("/auth/extension/token")
 async def mint_extension_token(
-    user: AuthenticatedUser = Depends(require_firebase_user),
+    request: Request,
+    _ip_rate_limit: None = Depends(_enforce_auth_ip_rate_limit),
+    user: AuthenticatedUser = Depends(require_verified_firebase_user),
     body: ExtensionTokenCreateBody = Body(default_factory=ExtensionTokenCreateBody),
 ):
     """Mint a long-lived API key for the Chrome extension after webapp sign-in.
@@ -681,6 +855,8 @@ async def mint_extension_token(
     The plaintext token is returned once. The extension stores it and sends it
     as Authorization Bearer / X-API-Key on subsequent API calls.
     """
+    del request, _ip_rate_limit
+    await _enforce_auth_account_rate_limit(user)
     account = get_user(user.uid)
     if account is None:
         raise HTTPException(
@@ -704,7 +880,7 @@ async def mint_extension_token(
 
 @app.post("/auth/extension/revoke")
 async def revoke_extension_tokens(
-    user: AuthenticatedUser = Depends(require_firebase_user),
+    user: AuthenticatedUser = Depends(require_verified_firebase_user),
 ):
     """Revoke all active Chrome extension tokens for the signed-in user."""
     account = get_user(user.uid)
@@ -722,11 +898,32 @@ async def revoke_extension_tokens(
 
 class OrgSettingsUpdate(BaseModel):
     watch_emails_enabled: bool | None = None
+    brand_name: str | None = Field(default=None, max_length=80)
+    # Optional PNG/JPEG/WebP logo as a data-URL or raw base64 (Agency white-label).
+    brand_logo_base64: str | None = None
+    clear_brand_logo: bool | None = None
+
+
+def _org_settings_payload(org) -> dict:
+    from core.plans import (
+        can_use_white_label_reports,
+        watch_cadence_for_plan,
+    )
+
+    return {
+        "org_id": org.id,
+        "plan_id": org.plan_id,
+        "watch_emails_enabled": org.watch_emails_enabled,
+        "watch_cadence": watch_cadence_for_plan(org.plan_id),
+        "white_label_reports_allowed": can_use_white_label_reports(org.id),
+        "brand_name": org.brand_name,
+        "brand_logo_configured": bool(org.brand_logo_path),
+    }
 
 
 @app.get("/orgs/me/settings")
 async def get_org_settings(
-    user: AuthenticatedUser = Depends(require_firebase_user),
+    user: AuthenticatedUser = Depends(require_verified_firebase_user),
 ):
     account = _account_for_firebase_user(user)
     org = get_organization(account.org_id)
@@ -735,19 +932,17 @@ async def get_org_settings(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"error": "organization_not_found"},
         )
-    return {
-        "org_id": org.id,
-        "plan_id": org.plan_id,
-        "watch_emails_enabled": org.watch_emails_enabled,
-        "watch_cadence": watch_cadence_for_plan(org.plan_id),
-    }
+    return _org_settings_payload(org)
 
 
 @app.put("/orgs/me/settings")
 async def update_org_settings(
     body: OrgSettingsUpdate,
-    user: AuthenticatedUser = Depends(require_firebase_user),
+    user: AuthenticatedUser = Depends(require_verified_firebase_user),
 ):
+    from core.accounts import branding_assets_dir, update_organization_branding
+    from core.plans import can_use_white_label_reports
+
     account = _account_for_firebase_user(user)
     if body.watch_emails_enabled is not None:
         org = set_watch_emails_enabled(account.org_id, body.watch_emails_enabled)
@@ -758,30 +953,246 @@ async def update_org_settings(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"error": "organization_not_found"},
         )
-    return {
-        "org_id": org.id,
-        "plan_id": org.plan_id,
-        "watch_emails_enabled": org.watch_emails_enabled,
-        "watch_cadence": watch_cadence_for_plan(org.plan_id),
-    }
+
+    branding_touched = (
+        body.brand_name is not None
+        or body.brand_logo_base64 is not None
+        or body.clear_brand_logo
+    )
+    if branding_touched:
+        if not can_use_white_label_reports(account.org_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"error": "white_label_reports_not_on_plan"},
+            )
+        logo_path: str | None = None
+        clear_logo = bool(body.clear_brand_logo)
+        if body.brand_logo_base64:
+            raw = body.brand_logo_base64.strip()
+            if "," in raw and raw.lower().startswith("data:"):
+                raw = raw.split(",", 1)[1]
+            try:
+                logo_bytes = base64.b64decode(raw, validate=True)
+            except Exception as exc:  # noqa: BLE001
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"error": "invalid_brand_logo"},
+                ) from exc
+            if len(logo_bytes) > 512_000:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"error": "brand_logo_too_large"},
+                )
+            # Basic magic-byte sniff for image types we accept in reports.
+            if logo_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+                ext = ".png"
+            elif logo_bytes.startswith(b"\xff\xd8\xff"):
+                ext = ".jpg"
+            elif logo_bytes.startswith(b"RIFF") and b"WEBP" in logo_bytes[:16]:
+                ext = ".webp"
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"error": "unsupported_brand_logo_type"},
+                )
+            dest = branding_assets_dir() / f"{account.org_id}{ext}"
+            dest.write_bytes(logo_bytes)
+            logo_path = str(dest)
+            clear_logo = False
+        brand_name = body.brand_name
+        if brand_name is not None:
+            brand_name = brand_name.strip() or None
+        org = update_organization_branding(
+            account.org_id,
+            brand_name=brand_name,
+            brand_logo_path=logo_path,
+            clear_logo=clear_logo,
+        )
+        if org is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"error": "organization_not_found"},
+            )
+
+    return _org_settings_payload(org)
 
 
 @app.get("/orgs/me/sites")
 async def get_org_sites(
-    user: AuthenticatedUser = Depends(require_firebase_user),
+    user: AuthenticatedUser = Depends(require_verified_firebase_user),
 ):
     account = _account_for_firebase_user(user)
     sites = list_org_sites(account.org_id, active_only=False)
     return {
         "sites": [site_to_dict(s) for s in sites],
         "watch_cadence": watch_cadence_for_plan(account.plan_id),
+        "authenticated_scanning_allowed": can_use_authenticated_scanning(
+            account.org_id
+        ),
+    }
+
+
+class SiteCredentialsRequest(BaseModel):
+    """Form-based auth credentials matching ZAP formBasedAuthentication.
+
+    ``username_field`` / ``password_field`` are HTML form ``name`` attributes
+    (not CSS selectors), as required by ZAP's loginRequestData format.
+    """
+
+    login_url: str = Field(..., description="Login form page / POST URL")
+    username: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=1)
+    username_field: str = Field(
+        default="username",
+        description="HTML form name attribute for the username/email field",
+    )
+    password_field: str = Field(
+        default="password",
+        description="HTML form name attribute for the password field",
+    )
+    excluded_paths: list[str] = Field(
+        default_factory=list,
+        description="Paths/actions to exclude from crawl and active tests",
+    )
+    credentials_authorized: bool = Field(
+        default=False,
+        description=(
+            "Mandatory consent: caller confirms they are authorized to use "
+            "these specific credentials for security testing."
+        ),
+    )
+
+
+class SiteExcludedPathsRequest(BaseModel):
+    excluded_paths: list[str] = Field(default_factory=list)
+
+
+@app.put("/orgs/me/sites/{site_id}/credentials")
+async def put_site_credentials(
+    site_id: str,
+    body: SiteCredentialsRequest,
+    user: AuthenticatedUser = Depends(require_verified_firebase_user),
+):
+    account = _account_for_firebase_user(user)
+    if not can_use_authenticated_scanning(account.org_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "authenticated_scanning_not_on_plan",
+                "message": (
+                    "Authenticated scanning requires a Pro or Agency plan. "
+                    "Upgrade to configure login credentials."
+                ),
+                "plan_id": account.plan_id,
+            },
+        )
+    if not body.credentials_authorized:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "credentials_consent_required",
+                "message": (
+                    "You must confirm you are authorized to use these specific "
+                    "credentials for security testing "
+                    "(credentials_authorized=true)."
+                ),
+            },
+        )
+
+    sites = {s.id: s for s in list_org_sites(account.org_id, active_only=False)}
+    site = sites.get(site_id)
+    if site is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "site_not_found", "site_id": site_id},
+        )
+
+    try:
+        safe_login_url = validate_login_url_for_site(
+            body.login_url.strip(),
+            site.target,
+        )
+    except SSRFError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "invalid_login_url",
+                "message": str(exc),
+                "login_url": body.login_url,
+            },
+        ) from exc
+
+    blob = encrypt_credentials(body.username, body.password)
+    record = upsert_site_auth_credentials(
+        site_id=site.id,
+        org_id=account.org_id,
+        login_url=safe_login_url,
+        username_field=body.username_field.strip() or "username",
+        password_field=body.password_field.strip() or "password",
+        encrypted_data_key=blob.encrypted_data_key,
+        encrypted_payload=blob.ciphertext,
+        username_hint=redact_username(body.username),
+        credentials_consent_user_id=account.id,
+        excluded_paths=body.excluded_paths,
+    )
+    return {
+        "ok": True,
+        "site_id": site_id,
+        "authenticated_scanning": site_auth_public_dict(record),
+    }
+
+
+@app.delete("/orgs/me/sites/{site_id}/credentials")
+async def remove_site_credentials(
+    site_id: str,
+    user: AuthenticatedUser = Depends(require_verified_firebase_user),
+):
+    account = _account_for_firebase_user(user)
+    sites = {s.id: s for s in list_org_sites(account.org_id, active_only=False)}
+    if site_id not in sites:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "site_not_found", "site_id": site_id},
+        )
+    deleted = delete_site_auth_credentials(site_id)
+    return {"ok": True, "site_id": site_id, "deleted": deleted}
+
+
+@app.put("/orgs/me/sites/{site_id}/excluded-paths")
+async def put_site_excluded_paths(
+    site_id: str,
+    body: SiteExcludedPathsRequest,
+    user: AuthenticatedUser = Depends(require_verified_firebase_user),
+):
+    account = _account_for_firebase_user(user)
+    sites = {s.id: s for s in list_org_sites(account.org_id, active_only=False)}
+    if site_id not in sites:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "site_not_found", "site_id": site_id},
+        )
+    existing = get_site_auth_credentials(site_id)
+    if existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": "credentials_not_configured",
+                "message": "Configure credentials before editing excluded paths.",
+                "site_id": site_id,
+            },
+        )
+    record = update_site_excluded_paths(site_id, body.excluded_paths)
+    return {
+        "ok": True,
+        "site_id": site_id,
+        "authenticated_scanning": site_auth_public_dict(record),
     }
 
 
 @app.delete("/orgs/me/sites/{site_id}")
 async def delete_org_site(
     site_id: str,
-    user: AuthenticatedUser = Depends(require_firebase_user),
+    user: AuthenticatedUser = Depends(require_verified_firebase_user),
 ):
     account = _account_for_firebase_user(user)
     sites = {s.id: s for s in list_org_sites(account.org_id, active_only=False)}
@@ -791,6 +1202,7 @@ async def delete_org_site(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"error": "site_not_found", "site_id": site_id},
         )
+    delete_site_auth_credentials(site_id)
     deactivate_site(site_id)
     on_site_removed(site_id)
     return {"ok": True, "site_id": site_id}
@@ -810,11 +1222,32 @@ class DodoWebhookPayload(BaseModel):
 
 @app.post("/webhooks/dodo")
 async def dodo_webhook(body: DodoWebhookPayload, request: Request):
-    """Apply plan changes from Dodo and reschedule Watch Agent jobs."""
+    """Apply plan changes from Dodo and reschedule Watch Agent jobs.
+
+    Subscription state is webhook-driven only. Requests without a configured
+    shared secret are rejected outside local development/test. When a secret
+    is configured, the header must match via constant-time comparison.
+    """
     settings = get_settings()
-    if settings.dodo_webhook_secret:
+    if not settings.dodo_webhook_secret:
+        if settings.app_env in ("production", "staging"):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "error": "webhook_not_configured",
+                    "message": "DODO_WEBHOOK_SECRET is required to accept billing webhooks.",
+                },
+            )
+        logger.warning(
+            "Accepting unsigned Dodo webhook because DODO_WEBHOOK_SECRET is unset "
+            "(allowed only in %s)",
+            settings.app_env,
+        )
+    else:
         provided = request.headers.get("X-Dodo-Webhook-Secret", "").strip()
-        if provided != settings.dodo_webhook_secret:
+        if not provided or not hmac.compare_digest(
+            provided, settings.dodo_webhook_secret
+        ):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail={"error": "invalid_webhook_secret"},
@@ -830,8 +1263,31 @@ async def dodo_webhook(body: DodoWebhookPayload, request: Request):
             detail={"error": "org_not_resolved"},
         )
 
+    payload_hash = hashlib.sha256(
+        body.model_dump_json(exclude_none=True).encode("utf-8")
+    ).hexdigest()
+    if not claim_webhook_event(payload_hash):
+        org = get_organization(org_id)
+        return {
+            "ok": True,
+            "duplicate": True,
+            "org_id": org_id,
+            "plan_id": org.plan_id if org else None,
+            "watch_jobs": None,
+        }
+
     event = body.event.lower()
     if "cancel" in event or event.endswith(".cancelled"):
+        if org_has_creator_member(org_id):
+            org = get_organization(org_id)
+            return {
+                "ok": True,
+                "skipped": True,
+                "reason": "creator_plan_protected",
+                "org_id": org_id,
+                "plan_id": org.plan_id if org else CREATOR_PLAN_ID,
+                "watch_jobs": None,
+            }
         plan_id = "free"
     else:
         plan_id = (body.plan_id or "starter").lower()
@@ -860,7 +1316,7 @@ async def dodo_webhook(body: DodoWebhookPayload, request: Request):
 async def get_org_scan_history(
     page: int = 1,
     page_size: int = 10,
-    user: AuthenticatedUser = Depends(require_firebase_user),
+    user: AuthenticatedUser = Depends(require_verified_firebase_user),
 ) -> ScanHistoryResponse:
     """List only scans belonging to the verified user's organization."""
     if page < 1 or page_size < 1 or page_size > 50:
@@ -906,25 +1362,122 @@ async def get_org_scan_history(
     )
 
 
+@app.get("/orgs/me/risk-trend", response_model=RiskTrendResponse)
+async def get_org_risk_trend(
+    target: str | None = None,
+    user: AuthenticatedUser = Depends(require_verified_firebase_user),
+) -> RiskTrendResponse:
+    """Risk score over time for completed full vulnerability scans (not watch jobs)."""
+    account = _account_for_firebase_user(user)
+    records = list_org_risk_trend(account.org_id, target=target)
+    points = [
+        RiskTrendPoint(
+            scan_id=r.id,
+            target=r.target,
+            created_at=r.created_at,
+            overall_risk_score=float(r.overall_risk_score or 0.0),
+            severity=r.severity,
+            findings_count=r.findings_count,
+            critical_high_count=r.critical_high_count,
+        )
+        for r in records
+    ]
+    return RiskTrendResponse(target=target, points=points)
+
+
+async def _probe_firecrawl(settings) -> dict[str, Any]:
+    if not settings.firecrawl_enabled:
+        return {"configured": False, "reachable": None, "status": "disabled"}
+    if not settings.firecrawl_api_key:
+        return {"configured": False, "reachable": False, "status": "missing_api_key"}
+    base = (settings.firecrawl_api_url or "https://api.firecrawl.dev").rstrip("/")
+    url = f"{base}/v1/team/credit-usage"
+    headers = {"Authorization": f"Bearer {settings.firecrawl_api_key}"}
+    try:
+        async with httpx.AsyncClient(timeout=settings.upstream_health_timeout_seconds) as client:
+            response = await client.get(url, headers=headers)
+        return {
+            "configured": True,
+            "reachable": response.status_code < 500,
+            "status_code": response.status_code,
+        }
+    except Exception as exc:  # noqa: BLE001 - health probe must never raise
+        return {"configured": True, "reachable": False, "error": str(exc)}
+
+
+async def _probe_dodo(settings) -> dict[str, Any]:
+    if not settings.dodo_api_key:
+        return {"configured": False, "reachable": None, "status": "missing_api_key"}
+    base = settings.dodo_api_url.rstrip("/")
+    url = f"{base}/v1/products"
+    headers = {"Authorization": f"Bearer {settings.dodo_api_key}"}
+    try:
+        async with httpx.AsyncClient(timeout=settings.upstream_health_timeout_seconds) as client:
+            response = await client.get(url, headers=headers)
+        return {
+            "configured": True,
+            "reachable": response.status_code < 500,
+            "status_code": response.status_code,
+        }
+    except Exception as exc:  # noqa: BLE001 - health probe must never raise
+        return {"configured": True, "reachable": False, "error": str(exc)}
+
+
 @app.get("/health")
 async def health() -> dict[str, Any]:
+    """Live readiness probe — re-checks binaries, ZAP, DB, and migrations each call."""
+    from core.accounts import probe_accounts_db
+    from core.migrations import probe_migrations
+    from core.toolchain import inspect_toolchain
+
     orchestrator = get_orchestrator()
     ready = orchestrator._graph is not None  # noqa: SLF001 - health probe
-    toolchain = get_toolchain_report().as_dict()
-    all_ok = ready and toolchain.get("ready", False)
-    return {
+    # Fresh probe (not the startup cache) so rolling ZAP restarts show up here.
+    toolchain = inspect_toolchain().as_dict()
+    db_ok, db_error = probe_accounts_db()
+    migrations_ok, migrations_error = probe_migrations()
+    settings = get_settings()
+    firecrawl_probe, dodo_probe = await asyncio.gather(
+        _probe_firecrawl(settings),
+        _probe_dodo(settings),
+    )
+    upstreams_ok = all(
+        probe.get("reachable") is not False for probe in (firecrawl_probe, dodo_probe)
+    )
+    all_ok = (
+        ready
+        and toolchain.get("ready", False)
+        and db_ok
+        and migrations_ok
+        and upstreams_ok
+    )
+    payload: dict[str, Any] = {
         "status": "ok" if all_ok else "degraded",
-        "service": get_settings().app_name,
+        "service": settings.app_name,
         "version": app.version,
         "orchestrator_ready": ready,
         "toolchain": toolchain,
+        "zap_ready": bool(toolchain.get("zap_ready")),
+        "database_ready": db_ok,
+        "migrations_current": migrations_ok,
+        "upstreams": {
+            "firecrawl": firecrawl_probe,
+            "dodo": dodo_probe,
+        },
     }
+    if db_error:
+        payload["database_error"] = db_error
+    if migrations_error:
+        payload["migrations_error"] = migrations_error
+    return payload
 
 
 @app.get("/targets", response_model=TargetsResponse)
-async def get_targets() -> TargetsResponse:
+async def get_targets(request: Request) -> TargetsResponse:
+    """List authorized targets. Requires auth when REQUIRE_FIREBASE_AUTH is on."""
     from core.scope import is_enforcement_enabled
 
+    _require_firebase_if_configured(request)
     return TargetsResponse(
         targets=await _targets_store.get(),
         enforcement_enabled=is_enforcement_enabled(),
@@ -932,9 +1485,11 @@ async def get_targets() -> TargetsResponse:
 
 
 @app.put("/targets", response_model=TargetsResponse)
-async def put_targets(body: TargetsRequest) -> TargetsResponse:
+async def put_targets(body: TargetsRequest, request: Request) -> TargetsResponse:
+    """Replace authorized targets. Requires auth when REQUIRE_FIREBASE_AUTH is on."""
     from core.scope import is_enforcement_enabled
 
+    _require_firebase_if_configured(request)
     updated = await _targets_store.set(body.targets)
     return TargetsResponse(
         targets=updated,
@@ -1014,37 +1569,9 @@ async def create_scan(body: ScanCreateRequest, request: Request) -> ScanCreateRe
         ) from exc
     enforce_scope(normalized_target)
     account = _resolve_scan_account(request, firebase_user)
+    _ensure_verified_for_sensitive_action(firebase_user, account)
     client_id = f"org:{account.org_id}" if account else _get_client_identity(request)
     orchestrator = get_orchestrator()
-
-    if account is not None:
-        target_count, monthly_scan_count = get_org_scan_usage(account.org_id)
-        is_new_target = not org_has_target(account.org_id, normalized_target)
-        if (
-            is_new_target
-            and account.max_targets is not None
-            and target_count >= account.max_targets
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail={
-                    "error": "target_quota_exceeded",
-                    "message": "Your plan's authorized target limit has been reached.",
-                    "limit": account.max_targets,
-                },
-            )
-        if (
-            account.scans_per_month is not None
-            and monthly_scan_count >= account.scans_per_month
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail={
-                    "error": "scan_quota_exceeded",
-                    "message": "Your plan's monthly scan limit has been reached.",
-                    "limit": account.scans_per_month,
-                },
-            )
 
     existing_scan_id = await _inflight_scans.get_inflight(client_id, normalized_target)
     if existing_scan_id:
@@ -1069,18 +1596,38 @@ async def create_scan(body: ScanCreateRequest, request: Request) -> ScanCreateRe
     scan_id = str(uuid.uuid4())
     try:
         await _inflight_scans.register(client_id, normalized_target, scan_id)
-        orchestrator.register_scan(scan_id, normalized_target, owner_id=client_id)
         if account is not None:
-            create_scan_record(
-                scan_id=scan_id,
-                org_id=account.org_id,
-                target=normalized_target,
-            )
+            try:
+                reservation = reserve_scan_quota_and_create_records(
+                    scan_id=scan_id,
+                    org_id=account.org_id,
+                    target=normalized_target,
+                    max_targets=account.max_targets,
+                    scans_per_month=account.scans_per_month,
+                )
+            except QuotaExceededError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail={
+                        "error": exc.code,
+                        "message": str(exc),
+                        "limit": exc.limit,
+                    },
+                ) from exc
+            orchestrator.register_scan(scan_id, normalized_target, owner_id=client_id)
             # Register the target as a monitored site; paid plans get a watch job.
-            site = upsert_site(org_id=account.org_id, target=normalized_target)
+            site = reservation.site
             if plan_supports_watch(account.plan_id):
                 on_site_added(site.id)
-        task = orchestrator.schedule_scan(scan_id, normalized_target)
+            task = orchestrator.schedule_scan(
+                scan_id,
+                normalized_target,
+                org_id=account.org_id,
+                site_id=site.id,
+            )
+        else:
+            orchestrator.register_scan(scan_id, normalized_target, owner_id=client_id)
+            task = orchestrator.schedule_scan(scan_id, normalized_target)
     except Exception:
         await _inflight_scans.release(scan_id)
         await _scan_rate_limiter.release(client_id)
@@ -1260,13 +1807,27 @@ async def get_scan_report(
     snapshot = await orchestrator.get_graph_snapshot(scan_id)
     values = dict(snapshot.values) if (snapshot and snapshot.values) else {}
 
+    from agents.reporting import build_coverage_section
+    from core.verify_fix import get_scan_verify_summaries
+
+    report = values.get("report")
+    coverage: dict[str, Any] | None = None
+    if isinstance(report, dict):
+        coverage = report.get("coverage") or build_coverage_section(report)
+    elif values.get("severity_scores"):
+        coverage = build_coverage_section(
+            {"severity_scores": values.get("severity_scores") or {}}
+        )
+
     return ScanReportResponse(
         scan_id=scan_id,
         target=summary["target"],
         status=values.get("status", summary["status"]),
         findings=values.get("findings", []),
-        report=values.get("report"),
+        report=report,
         generated_at=datetime.now(timezone.utc).isoformat(),
+        verify_fix_summaries=get_scan_verify_summaries(scan_id),
+        coverage=coverage,
     )
 
 
@@ -1336,3 +1897,149 @@ async def get_scan_report_format(
             filename=f"checkmate-{scan_id}.pdf",
         )
     return FileResponse(report_path, media_type="text/html")
+
+
+async def _load_scan_findings(scan_id: str) -> list[dict[str, Any]]:
+    """Load findings from graph state, falling back to the on-disk JSON report."""
+    orchestrator = get_orchestrator()
+    snapshot = await orchestrator.get_graph_snapshot(scan_id)
+    values = dict(snapshot.values) if (snapshot and snapshot.values) else {}
+    findings = values.get("findings")
+    if isinstance(findings, list) and findings:
+        return [dict(f) for f in findings if isinstance(f, dict)]
+
+    report_path = Path(__file__).resolve().parent.parent / "reports" / scan_id / "report.json"
+    if report_path.is_file():
+        data = json.loads(report_path.read_text(encoding="utf-8"))
+        by_sev = data.get("findings_by_severity") or {}
+        flat: list[dict[str, Any]] = []
+        for severity in ("critical", "high", "medium", "low", "info"):
+            for finding in by_sev.get(severity) or []:
+                if isinstance(finding, dict):
+                    flat.append(dict(finding))
+        if flat:
+            return flat
+    return []
+
+
+def _org_id_for_scan_request(request: Request, scan_id: str) -> str:
+    """Resolve the org that owns this scan (for verify-fix history rows)."""
+    firebase_user = _require_firebase_if_configured(request)
+    if firebase_user is not None:
+        account = _account_for_firebase_user(firebase_user)
+        return account.org_id
+    record = get_scan_record(scan_id)
+    if record is not None:
+        return record.org_id
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail={"error": "scan_not_found", "scan_id": scan_id},
+    )
+
+
+@app.post(
+    "/scan/{scan_id}/findings/{finding_id}/verify-fix",
+    response_model=VerifyFixResponse,
+)
+async def verify_finding_fix(
+    scan_id: str,
+    finding_id: str,
+    request: Request,
+) -> VerifyFixResponse:
+    """Narrow single-finding re-check. Does not consume monthly scan quota."""
+    from core.verify_fix import (
+        FindingNotFound,
+        VerifyFixRateLimited,
+        get_scan_verify_summaries,
+        run_verify_fix,
+    )
+
+    _assert_scan_owner(scan_id, request)
+    org_id = _org_id_for_scan_request(request, scan_id)
+    findings = await _load_scan_findings(scan_id)
+    if not findings:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": "findings_not_ready",
+                "message": "Findings are not available yet for this scan.",
+                "scan_id": scan_id,
+            },
+        )
+
+    # Snapshot usage before the check so tests can assert quota is unchanged.
+    usage_before = get_org_scan_usage(org_id)
+
+    try:
+        result = await run_verify_fix(
+            scan_id=scan_id,
+            org_id=org_id,
+            finding_id=finding_id,
+            findings=findings,
+        )
+    except FindingNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": exc.code, "message": exc.message, "finding_id": finding_id},
+        ) from exc
+    except VerifyFixRateLimited as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "error": exc.code,
+                "message": exc.message,
+                "retry_after_seconds": exc.retry_after_seconds,
+            },
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
+
+    usage_after = get_org_scan_usage(org_id)
+    if usage_after != usage_before:
+        # Defensive: verify-fix must never create a full-scan quota row.
+        logger.error(
+            "Verify Fix unexpectedly changed scan quota",
+            extra={"scan_id": scan_id, "before": usage_before, "after": usage_after},
+        )
+
+    # Touch summaries so future GET report enrichment stays warm.
+    get_scan_verify_summaries(scan_id)
+    return VerifyFixResponse(**result)
+
+
+@app.get("/scan/{scan_id}/findings/{finding_id}/verify-fix")
+async def get_finding_verify_fix_history(
+    scan_id: str,
+    finding_id: str,
+    request: Request,
+) -> dict[str, Any]:
+    """Return verification history for a finding (latest first)."""
+    from core.accounts import list_finding_fix_verifications
+    from core.verify_fix import get_scan_verify_summaries
+
+    _assert_scan_owner(scan_id, request)
+    history = list_finding_fix_verifications(scan_id, finding_id)
+    summaries = get_scan_verify_summaries(scan_id)
+    latest = summaries.get(finding_id)
+    return {
+        "scan_id": scan_id,
+        "finding_id": finding_id,
+        "latest": latest,
+        "history": history,
+        "attempt_count": len(history),
+        "quota_consumed": False,
+    }
+
+
+@app.get("/scan/{scan_id}/verify-fix/summaries")
+async def get_scan_verify_fix_summaries(
+    scan_id: str,
+    request: Request,
+) -> dict[str, Any]:
+    """Latest Verify Fix status for every finding on a scan."""
+    from core.verify_fix import get_scan_verify_summaries
+
+    _assert_scan_owner(scan_id, request)
+    return {
+        "scan_id": scan_id,
+        "summaries": get_scan_verify_summaries(scan_id),
+    }

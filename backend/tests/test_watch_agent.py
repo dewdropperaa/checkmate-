@@ -30,7 +30,7 @@ from core.watch_agent.email_notify import (
     queue_watch_alert,
     render_watch_email_html,
 )
-from core.watch_agent.nvd_client import cve_affects_version, version_in_range
+from core.watch_agent.nvd_client import NvdClient, cve_affects_version, version_in_range
 from core.watch_agent.scheduler import (
     cancel_site_watch_job,
     configure_scheduler_db,
@@ -241,6 +241,91 @@ def test_cve_affects_version_inside_vs_outside() -> None:
     assert cve_affects_version(cve, product_name="WordPress", version="6.3.1")
     assert not cve_affects_version(cve, product_name="WordPress", version="6.5.0")
     assert not cve_affects_version(cve, product_name="WordPress", version="5.0")
+
+
+def test_cve_affects_version_nested_cpe_range_payload() -> None:
+    cve = {
+        "id": "CVE-2025-0001",
+        "configurations": [
+            {
+                "nodes": [
+                    {
+                        "operator": "AND",
+                        "children": [
+                            {
+                                "operator": "OR",
+                                "cpeMatch": [
+                                    {
+                                        "vulnerable": True,
+                                        "criteria": "cpe:2.3:a:wordpress:wordpress:*:*:*:*:*:*:*:*",
+                                        "versionStartExcluding": "6.1",
+                                        "versionEndIncluding": "6.4.1",
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ]
+            }
+        ],
+    }
+    assert cve_affects_version(cve, product_name="WordPress", version="6.4.1")
+    assert not cve_affects_version(cve, product_name="WordPress", version="6.1")
+    assert not cve_affects_version(cve, product_name="WordPress", version="6.4.2")
+
+
+@pytest.mark.asyncio
+async def test_nvd_search_consumes_all_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[int] = []
+
+    class _Response:
+        status_code = 200
+
+        def __init__(self, payload: dict[str, Any]) -> None:
+            self._payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, Any]:
+            return self._payload
+
+    class _Client:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args) -> None:
+            return None
+
+        async def get(self, _url, *, params, headers):
+            start = int(params["startIndex"])
+            calls.append(start)
+            if start == 0:
+                return _Response(
+                    {
+                        "totalResults": 2,
+                        "startIndex": 0,
+                        "resultsPerPage": 1,
+                        "vulnerabilities": [{"cve": {"id": "CVE-1"}}],
+                    }
+                )
+            return _Response(
+                {
+                    "totalResults": 2,
+                    "startIndex": 1,
+                    "resultsPerPage": 1,
+                    "vulnerabilities": [{"cve": {"id": "CVE-2"}}],
+                }
+            )
+
+    monkeypatch.setattr("core.watch_agent.nvd_client.httpx.AsyncClient", _Client)
+    client = NvdClient(api_key=None)
+    records = await client.search_cves_for_product("WordPress", results_per_page=1)
+    assert calls == [0, 1]
+    assert [record["id"] for record in records] == ["CVE-1", "CVE-2"]
 
 
 def test_cve_dedup_never_alerts_twice(org_with_user) -> None:

@@ -228,6 +228,12 @@ async def run_tool_safely(
         result = await make_coro()
         if isinstance(result, ToolResult) and not result.success:
             message = result.error or "Tool reported failure"
+            # Do not retry full ZAP active-scan timeouts / unavailability —
+            # each attempt can take many minutes and would hang the pipeline.
+            if tool_name == "zap" and (
+                result.timed_out or not is_retryable_error(message)
+            ):
+                return result
             if is_retryable_error(message) or result.timed_out:
                 raise ToolExecutionError(message)
         return result

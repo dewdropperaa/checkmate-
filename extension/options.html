@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>checkmate Options</title>
     <style>
-      :root {
+      :root,
+      [data-theme="dark"] {
+        color-scheme: dark;
         --bg: #0a0d0b;
         --panel: #0e1310;
         --panel-alt: #0c1512;
@@ -19,6 +21,35 @@
         --accent-ink: #06170e;
         --amber: #ffb454;
         --red: #ff5d5d;
+        --input-bg: #070a08;
+        --overlay: rgba(5, 8, 6, 0.72);
+        --scanline: rgba(255, 255, 255, 0.028);
+        --glow: rgba(61, 220, 132, 0.06);
+        --accent-focus: rgba(61, 220, 132, 0.25);
+        --mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Consolas,
+          "Liberation Mono", "SFMono-Regular", Menlo, monospace;
+      }
+
+      [data-theme="light"] {
+        color-scheme: light;
+        --bg: #f4f6f4;
+        --panel: #eef1ee;
+        --panel-alt: #e6ebe7;
+        --border: #c8d2cb;
+        --border-bright: #9aafa3;
+        --fg: #1a211c;
+        --fg-dim: #4a5c52;
+        --fg-faint: #6e8478;
+        --accent: #0b6e4f;
+        --accent-bright: #065f46;
+        --accent-ink: #f4f6f4;
+        --amber: #a16207;
+        --red: #991b1b;
+        --input-bg: #ffffff;
+        --overlay: rgba(26, 33, 28, 0.45);
+        --scanline: rgba(0, 0, 0, 0.03);
+        --glow: rgba(11, 110, 79, 0.06);
+        --accent-focus: rgba(11, 110, 79, 0.25);
         --mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Consolas,
           "Liberation Mono", "SFMono-Regular", Menlo, monospace;
       }
@@ -165,13 +196,14 @@
         color: var(--fg-dim);
       }
 
-      input {
+      input,
+      select {
         width: 100%;
         box-sizing: border-box;
         padding: 9px 10px;
         border-radius: 0;
         border: 1px solid var(--border-bright);
-        background: #070a08;
+        background: var(--input-bg);
         color: var(--accent-bright);
         font-family: var(--mono);
         font-size: 0.82rem;
@@ -185,7 +217,7 @@
       input:focus {
         outline: none;
         border-color: var(--accent);
-        box-shadow: 0 0 0 1px rgba(61, 220, 132, 0.25);
+        box-shadow: 0 0 0 1px var(--accent-focus);
       }
 
       button {
@@ -233,7 +265,7 @@
 
       .danger:hover {
         background: var(--red);
-        color: #1a0505;
+        color: var(--accent-ink);
         border-color: var(--red);
       }
 
@@ -262,7 +294,7 @@
       }
 
       #target-list li:nth-child(odd) {
-        background: rgba(61, 220, 132, 0.025);
+        background: var(--glow);
       }
 
       #target-list code {
@@ -361,6 +393,16 @@
       </section>
 
       <section class="card">
+        <h2>appearance</h2>
+        <label for="theme-preference">Theme</label>
+        <select id="theme-preference">
+          <option value="system">System</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </section>
+
+      <section class="card">
         <h2>backend</h2>
         <label for="backend-url">Backend base URL</label>
         <input id="backend-url" type="url" placeholder="http://127.0.0.1:8000" />
@@ -382,6 +424,6 @@
 
       <p id="status"></p>
     </main>
-    <script type="module" src="options.js"></script>
+    <script type="module" src="./options.ts"></script>
   </body>
 </html>

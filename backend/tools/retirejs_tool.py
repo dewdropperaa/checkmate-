@@ -120,6 +120,27 @@ class RetireJSTool(BaseSecurityTool):
 
         findings = self._parse_findings(stdout, target)
 
+        # retire.js: 0 = clean, 13 = vulnerabilities found. Anything else is failure.
+        if exit_code not in (0, 13):
+            return ToolResult(
+                tool_name=self.name,
+                target=target,
+                success=False,
+                error=(
+                    f"retire.js exited with code {exit_code}"
+                    + (f": {stderr.strip()}" if stderr.strip() else "")
+                ),
+                data={
+                    "findings": [f.model_dump_for_state() for f in findings],
+                    "finding_count": len(findings),
+                    "js_url": target,
+                },
+                stdout=stdout,
+                stderr=stderr,
+                exit_code=exit_code,
+                timed_out=False,
+            )
+
         return ToolResult(
             tool_name=self.name,
             target=target,
@@ -166,6 +187,8 @@ class RetireJSTool(BaseSecurityTool):
         binary_path = self.get_binary_path()
 
         all_findings: list[Finding] = []
+        child_failures: list[str] = []
+        urls_scanned = 0
 
         for js_url in js_urls:
             args = [
@@ -181,9 +204,34 @@ class RetireJSTool(BaseSecurityTool):
                 timeout=self.timeout,
             )
 
-            if not timed_out:
-                findings = self._parse_findings(stdout, js_url)
-                all_findings.extend(findings)
+            if timed_out:
+                child_failures.append(f"{js_url}: timed out")
+                continue
+
+            if exit_code not in (0, 13):
+                child_failures.append(f"{js_url}: exit {exit_code}")
+                continue
+
+            findings = self._parse_findings(stdout, js_url)
+            all_findings.extend(findings)
+            urls_scanned += 1
+
+        if child_failures and urls_scanned == 0:
+            return ToolResult(
+                tool_name=self.name,
+                target="batch",
+                success=False,
+                error=(
+                    "retire.js failed for all URLs: "
+                    + "; ".join(child_failures[:5])
+                ),
+                data={
+                    "findings": [],
+                    "finding_count": 0,
+                    "js_urls_scanned": 0,
+                    "child_failures": child_failures,
+                },
+            )
 
         return ToolResult(
             tool_name=self.name,
@@ -192,8 +240,14 @@ class RetireJSTool(BaseSecurityTool):
             data={
                 "findings": [f.model_dump_for_state() for f in all_findings],
                 "finding_count": len(all_findings),
-                "js_urls_scanned": len(js_urls),
+                "js_urls_scanned": urls_scanned,
+                "child_failures": child_failures or None,
             },
+            error=(
+                f"retire.js partial failures: {len(child_failures)} URL(s)"
+                if child_failures
+                else None
+            ),
         )
 
     def _parse_findings(self, output: str, js_url: str) -> list[Finding]:

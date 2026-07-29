@@ -75,6 +75,8 @@ export type ScanHistoryItem = {
   current_node: string | null;
   overall_risk_score: number | null;
   severity: "critical" | "high" | "medium" | "low" | "info" | null;
+  findings_count?: number | null;
+  critical_high_count?: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -88,6 +90,87 @@ export type ScanHistoryResponse = {
   target_count: number;
   scans_this_month: number;
   targets: string[];
+};
+
+export type RiskTrendPoint = {
+  scan_id: string;
+  target: string;
+  created_at: string;
+  overall_risk_score: number;
+  severity: string | null;
+  findings_count: number | null;
+  critical_high_count: number | null;
+};
+
+export type RiskTrendResponse = {
+  target: string | null;
+  points: RiskTrendPoint[];
+};
+
+export type VerifyFixResult = "fixed" | "still_present" | "changed";
+
+export type VerifyFixResponse = {
+  scan_id: string;
+  finding_id: string;
+  result: VerifyFixResult;
+  evidence: string | null;
+  verification: Record<string, unknown> | null;
+  confidence: number | null;
+  checked_at: string;
+  quota_consumed: boolean;
+  history: Array<Record<string, unknown>>;
+  attempt_count: number;
+  finding: Record<string, unknown>;
+};
+
+export type ScanFinding = {
+  id?: string;
+  tool?: string;
+  type?: string;
+  url?: string;
+  severity?: string;
+  description?: string;
+  evidence?: string | null;
+  remediation?: string;
+  confidence?: number;
+  verification?: Record<string, unknown> | null;
+  likely_false_positive?: boolean;
+  [key: string]: unknown;
+};
+
+export type ScanCoverage = {
+  title: string;
+  limitations_heading: string;
+  disclaimer: string;
+  modules_run: string[];
+  modules_failed: string[];
+  modules_skipped: string[];
+  modules_not_applicable: string[];
+  modules_rejected: string[];
+  coverage_notes: string[];
+  score_basis?: string | null;
+  authenticated_scanning?: Record<string, unknown>;
+  recon_partial_failure?: boolean;
+};
+
+export type ScanReportResponse = {
+  scan_id: string;
+  target: string;
+  status: string;
+  findings: ScanFinding[];
+  report: Record<string, unknown> | null;
+  generated_at: string;
+  verify_fix_summaries: Record<
+    string,
+    {
+      result?: string;
+      evidence?: string | null;
+      checked_at?: string;
+      attempt_count?: number;
+      [key: string]: unknown;
+    }
+  >;
+  coverage: ScanCoverage | null;
 };
 
 export type ScanStatus = {
@@ -104,6 +187,45 @@ export type ScanStatus = {
   created_at: string;
   updated_at: string;
   error?: { code: string; message: string } | null;
+};
+
+export type SiteAuthPublic = {
+  configured: boolean;
+  username_hint: string | null;
+  login_url: string | null;
+  username_field: string | null;
+  password_field: string | null;
+  excluded_paths: string[];
+  credentials_consent_at: string | null;
+  credentials_consent_user_id: string | null;
+  updated_at?: string;
+};
+
+export type OrgSite = {
+  id: string;
+  org_id: string;
+  target: string;
+  active: boolean;
+  last_watch_at: string | null;
+  created_at: string;
+  updated_at: string;
+  authenticated_scanning: SiteAuthPublic;
+};
+
+export type OrgSitesResponse = {
+  sites: OrgSite[];
+  watch_cadence: string;
+  authenticated_scanning_allowed: boolean;
+};
+
+export type SiteCredentialsPayload = {
+  login_url: string;
+  username: string;
+  password: string;
+  username_field?: string;
+  password_field?: string;
+  excluded_paths?: string[];
+  credentials_authorized: boolean;
 };
 
 export type ScanCreateResponse = {
@@ -204,13 +326,18 @@ export function approveScan(
   idToken: string,
   scanId: string,
   approved: boolean,
+  approvedTools?: string[],
 ): Promise<ScanApprovalResponse> {
+  const body: { approved: boolean; approved_tools?: string[] } = { approved };
+  if (approvedTools !== undefined) {
+    body.approved_tools = approvedTools;
+  }
   return authenticatedRequest(
     `/scan/${encodeURIComponent(scanId)}/approve`,
     idToken,
     {
       method: "POST",
-      body: JSON.stringify({ approved }),
+      body: JSON.stringify(body),
     },
   );
 }
@@ -240,6 +367,38 @@ export async function fetchScanReportPdf(
   return response.blob();
 }
 
+export function getScanReport(
+  idToken: string,
+  scanId: string,
+): Promise<ScanReportResponse> {
+  return authenticatedRequest(
+    `/scan/${encodeURIComponent(scanId)}/report`,
+    idToken,
+  );
+}
+
+export function verifyFindingFix(
+  idToken: string,
+  scanId: string,
+  findingId: string,
+): Promise<VerifyFixResponse> {
+  return authenticatedRequest(
+    `/scan/${encodeURIComponent(scanId)}/findings/${encodeURIComponent(findingId)}/verify-fix`,
+    idToken,
+    { method: "POST" },
+  );
+}
+
+export function getRiskTrend(
+  idToken: string,
+  target?: string,
+): Promise<RiskTrendResponse> {
+  const query = target
+    ? `?target=${encodeURIComponent(target)}`
+    : "";
+  return authenticatedRequest(`/orgs/me/risk-trend${query}`, idToken);
+}
+
 export function mintExtensionToken(
   idToken: string,
   label = "chrome-extension",
@@ -256,4 +415,49 @@ export function revokeExtensionTokens(
   return authenticatedRequest("/auth/extension/revoke", idToken, {
     method: "POST",
   });
+}
+
+export function listOrgSites(idToken: string): Promise<OrgSitesResponse> {
+  return authenticatedRequest("/orgs/me/sites", idToken);
+}
+
+export function saveSiteCredentials(
+  idToken: string,
+  siteId: string,
+  payload: SiteCredentialsPayload,
+): Promise<{ ok: boolean; authenticated_scanning: SiteAuthPublic }> {
+  return authenticatedRequest(
+    `/orgs/me/sites/${encodeURIComponent(siteId)}/credentials`,
+    idToken,
+    {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function removeSiteCredentials(
+  idToken: string,
+  siteId: string,
+): Promise<{ ok: boolean; deleted: boolean }> {
+  return authenticatedRequest(
+    `/orgs/me/sites/${encodeURIComponent(siteId)}/credentials`,
+    idToken,
+    { method: "DELETE" },
+  );
+}
+
+export function updateSiteExcludedPaths(
+  idToken: string,
+  siteId: string,
+  excludedPaths: string[],
+): Promise<{ ok: boolean; authenticated_scanning: SiteAuthPublic }> {
+  return authenticatedRequest(
+    `/orgs/me/sites/${encodeURIComponent(siteId)}/excluded-paths`,
+    idToken,
+    {
+      method: "PUT",
+      body: JSON.stringify({ excluded_paths: excludedPaths }),
+    },
+  );
 }

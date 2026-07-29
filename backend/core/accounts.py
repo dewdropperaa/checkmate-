@@ -19,6 +19,8 @@ from typing import Any
 
 from core.plans import get_plan_limits
 
+CREATOR_PLAN_ID = "agency"
+
 # Free plan limits — keep in sync with web/src/config/plans.ts (plan id "free").
 FREE_PLAN_ID = "free"
 FREE_MAX_TARGETS = 1
@@ -42,6 +44,8 @@ class Organization:
     created_at: str
     updated_at: str
     watch_emails_enabled: bool = True
+    brand_name: str | None = None
+    brand_logo_path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -74,6 +78,8 @@ class ScanRecord:
     created_at: str
     updated_at: str
     kind: str = "full"  # full | watch
+    findings_count: int | None = None
+    critical_high_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -90,6 +96,39 @@ class SiteRecord:
 
 
 @dataclass(frozen=True)
+class SiteAuthCredentialRecord:
+    """Encrypted auth credentials + consent metadata for a monitored site.
+
+    Never includes plaintext username/password — only ciphertext and a
+    redacted username_hint safe for UI / approval / reports.
+    """
+
+    site_id: str
+    org_id: str
+    login_url: str
+    username_field: str
+    password_field: str
+    encrypted_data_key: bytes
+    encrypted_payload: bytes
+    username_hint: str
+    credentials_consent_user_id: str
+    credentials_consent_at: str
+    excluded_paths_json: str
+    created_at: str
+    updated_at: str
+
+    @property
+    def excluded_paths(self) -> list[str]:
+        try:
+            data = json.loads(self.excluded_paths_json or "[]")
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(data, list):
+            return []
+        return [str(p) for p in data if str(p).strip()]
+
+
+@dataclass(frozen=True)
 class ExtensionTokenRecord:
     id: str
     org_id: str
@@ -98,6 +137,21 @@ class ExtensionTokenRecord:
     created_at: str
     revoked_at: str | None = None
     label: str | None = None
+
+
+@dataclass(frozen=True)
+class QuotaReservation:
+    scan: ScanRecord
+    site: SiteRecord
+
+
+class QuotaExceededError(ValueError):
+    """Raised when an atomic scan reservation would exceed plan quota."""
+
+    def __init__(self, code: str, message: str, limit: int | None) -> None:
+        super().__init__(message)
+        self.code = code
+        self.limit = limit
 
 
 def configure_accounts_db(path: Path | str | None = None) -> None:
@@ -122,165 +176,12 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
-def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
-    cols = {
-        str(row[1])
-        for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
-    }
-    if column not in cols:
-        conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
-
-
 def init_accounts_schema() -> None:
+    """Ensure the accounts database schema is at the latest Alembic revision."""
+    from core.migrations import upgrade_database
+
     with _lock:
-        conn = _connect()
-        try:
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS organizations (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    plan_id TEXT NOT NULL DEFAULT 'free',
-                    max_targets INTEGER,
-                    scans_per_month INTEGER,
-                    watch_emails_enabled INTEGER NOT NULL DEFAULT 1,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS users (
-                    id TEXT PRIMARY KEY,
-                    email TEXT,
-                    display_name TEXT,
-                    auth_provider TEXT,
-                    org_id TEXT NOT NULL REFERENCES organizations(id),
-                    email_verified INTEGER NOT NULL DEFAULT 0,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    last_login_at TEXT
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-                CREATE INDEX IF NOT EXISTS idx_users_org ON users(org_id);
-
-                CREATE TABLE IF NOT EXISTS scans (
-                    id TEXT PRIMARY KEY,
-                    org_id TEXT NOT NULL REFERENCES organizations(id),
-                    target TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'pending',
-                    current_node TEXT,
-                    overall_risk_score REAL,
-                    severity TEXT,
-                    kind TEXT NOT NULL DEFAULT 'full',
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_scans_org_created
-                    ON scans(org_id, created_at DESC);
-                CREATE INDEX IF NOT EXISTS idx_scans_org_target
-                    ON scans(org_id, target);
-
-                CREATE TABLE IF NOT EXISTS sites (
-                    id TEXT PRIMARY KEY,
-                    org_id TEXT NOT NULL REFERENCES organizations(id),
-                    target TEXT NOT NULL,
-                    active INTEGER NOT NULL DEFAULT 1,
-                    last_watch_at TEXT,
-                    last_cve_check_at TEXT,
-                    fingerprint_json TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    UNIQUE(org_id, target)
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_sites_org_active
-                    ON sites(org_id, active);
-
-                CREATE TABLE IF NOT EXISTS watch_findings_snapshots (
-                    id TEXT PRIMARY KEY,
-                    site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
-                    org_id TEXT NOT NULL REFERENCES organizations(id),
-                    scan_id TEXT,
-                    source TEXT NOT NULL,
-                    findings_json TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_watch_snapshots_site
-                    ON watch_findings_snapshots(site_id, created_at DESC);
-
-                CREATE TABLE IF NOT EXISTS watch_diffs (
-                    id TEXT PRIMARY KEY,
-                    site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
-                    org_id TEXT NOT NULL REFERENCES organizations(id),
-                    scan_id TEXT,
-                    newly_appeared_json TEXT NOT NULL,
-                    severity_increased_json TEXT NOT NULL,
-                    fixed_json TEXT NOT NULL,
-                    should_alert INTEGER NOT NULL DEFAULT 0,
-                    created_at TEXT NOT NULL
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_watch_diffs_site
-                    ON watch_diffs(site_id, created_at DESC);
-
-                CREATE TABLE IF NOT EXISTS site_cve_alerts (
-                    site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
-                    cve_id TEXT NOT NULL,
-                    alerted_at TEXT NOT NULL,
-                    product TEXT,
-                    version TEXT,
-                    summary TEXT,
-                    PRIMARY KEY (site_id, cve_id)
-                );
-
-                CREATE TABLE IF NOT EXISTS email_outbox (
-                    id TEXT PRIMARY KEY,
-                    org_id TEXT NOT NULL REFERENCES organizations(id),
-                    to_email TEXT NOT NULL,
-                    subject TEXT NOT NULL,
-                    html_body TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'pending',
-                    attempts INTEGER NOT NULL DEFAULT 0,
-                    last_error TEXT,
-                    next_attempt_at TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_email_outbox_pending
-                    ON email_outbox(status, next_attempt_at);
-
-                CREATE TABLE IF NOT EXISTS extension_tokens (
-                    id TEXT PRIMARY KEY,
-                    org_id TEXT NOT NULL REFERENCES organizations(id),
-                    user_id TEXT NOT NULL REFERENCES users(id),
-                    key_hash TEXT NOT NULL UNIQUE,
-                    key_prefix TEXT NOT NULL,
-                    label TEXT,
-                    created_at TEXT NOT NULL,
-                    revoked_at TEXT
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_extension_tokens_hash
-                    ON extension_tokens(key_hash);
-                CREATE INDEX IF NOT EXISTS idx_extension_tokens_org
-                    ON extension_tokens(org_id);
-                """
-            )
-            _ensure_column(
-                conn,
-                "organizations",
-                "watch_emails_enabled",
-                "watch_emails_enabled INTEGER NOT NULL DEFAULT 1",
-            )
-            _ensure_column(conn, "scans", "kind", "kind TEXT NOT NULL DEFAULT 'full'")
-            _ensure_column(conn, "users", "terms_accepted_at", "terms_accepted_at TEXT")
-            _ensure_column(conn, "users", "terms_version", "terms_version TEXT")
-            conn.commit()
-        finally:
-            conn.close()
+        upgrade_database()
 
 
 def _row_to_user(row: sqlite3.Row, org: sqlite3.Row | None = None) -> UserRecord:
@@ -303,6 +204,34 @@ def _row_to_user(row: sqlite3.Row, org: sqlite3.Row | None = None) -> UserRecord
         ),
         terms_version=row["terms_version"] if "terms_version" in keys else None,
     )
+
+
+def is_creator_email(email: str | None) -> bool:
+    """True when *email* is listed in CREATOR_EMAILS (case-insensitive)."""
+    if not email:
+        return False
+    from core.config import get_settings
+
+    normalized = email.strip().lower()
+    return normalized in get_settings().creator_email_list
+
+
+def ensure_creator_plan_for_org(org_id: str, email: str | None) -> None:
+    """Upgrade a creator's organization to agency tier when applicable."""
+    if not is_creator_email(email):
+        return
+    org = get_organization(org_id)
+    if org is None or org.plan_id == CREATOR_PLAN_ID:
+        return
+    update_organization_plan(org_id, plan_id=CREATOR_PLAN_ID)
+
+
+def org_has_creator_member(org_id: str) -> bool:
+    """True when any member of the org is a configured creator email."""
+    for member_email in list_org_member_emails(org_id):
+        if is_creator_email(member_email):
+            return True
+    return False
 
 
 def get_user(uid: str) -> UserRecord | None:
@@ -373,6 +302,10 @@ def upsert_user_from_firebase(
             if existing is None:
                 org_id = str(uuid.uuid4())
                 org_name = (email.split("@")[0] if email else "workspace")[:80]
+                if is_creator_email(email):
+                    limits = get_plan_limits(CREATOR_PLAN_ID)
+                else:
+                    limits = get_plan_limits(FREE_PLAN_ID)
                 conn.execute(
                     """
                     INSERT INTO organizations (
@@ -383,9 +316,9 @@ def upsert_user_from_firebase(
                     (
                         org_id,
                         f"{org_name}'s workspace",
-                        FREE_PLAN_ID,
-                        FREE_MAX_TARGETS,
-                        FREE_SCANS_PER_MONTH,
+                        limits.plan_id,
+                        limits.max_targets,
+                        limits.scans_per_month,
                         now,
                         now,
                     ),
@@ -419,70 +352,82 @@ def upsert_user_from_firebase(
                 row = conn.execute(
                     "SELECT * FROM users WHERE id = ?", (uid,)
                 ).fetchone()
-                return _row_to_user(row, org), True
-
-            if terms_accepted:
-                conn.execute(
-                    """
-                    UPDATE users SET
-                        email = COALESCE(?, email),
-                        display_name = COALESCE(?, display_name),
-                        auth_provider = COALESCE(?, auth_provider),
-                        email_verified = ?,
-                        updated_at = ?,
-                        last_login_at = ?,
-                        terms_accepted_at = COALESCE(terms_accepted_at, ?),
-                        terms_version = ?
-                    WHERE id = ?
-                    """,
-                    (
-                        email,
-                        display_name,
-                        auth_provider,
-                        1 if email_verified else 0,
-                        now,
-                        now,
-                        terms_at,
-                        accepted_version,
-                        uid,
-                    ),
-                )
+                user_record = _row_to_user(row, org)
+                created = True
             else:
-                conn.execute(
-                    """
-                    UPDATE users SET
-                        email = COALESCE(?, email),
-                        display_name = COALESCE(?, display_name),
-                        auth_provider = COALESCE(?, auth_provider),
-                        email_verified = ?,
-                        updated_at = ?,
-                        last_login_at = ?
-                    WHERE id = ?
-                    """,
-                    (
-                        email,
-                        display_name,
-                        auth_provider,
-                        1 if email_verified else 0,
-                        now,
-                        now,
-                        uid,
-                    ),
-                )
-            conn.commit()
-            row = conn.execute(
-                "SELECT * FROM users WHERE id = ?", (uid,)
-            ).fetchone()
-            org = conn.execute(
-                "SELECT * FROM organizations WHERE id = ?", (row["org_id"],)
-            ).fetchone()
-            return _row_to_user(row, org), False
+                if terms_accepted:
+                    conn.execute(
+                        """
+                        UPDATE users SET
+                            email = COALESCE(?, email),
+                            display_name = COALESCE(?, display_name),
+                            auth_provider = COALESCE(?, auth_provider),
+                            email_verified = ?,
+                            updated_at = ?,
+                            last_login_at = ?,
+                            terms_accepted_at = COALESCE(terms_accepted_at, ?),
+                            terms_version = ?
+                        WHERE id = ?
+                        """,
+                        (
+                            email,
+                            display_name,
+                            auth_provider,
+                            1 if email_verified else 0,
+                            now,
+                            now,
+                            terms_at,
+                            accepted_version,
+                            uid,
+                        ),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        UPDATE users SET
+                            email = COALESCE(?, email),
+                            display_name = COALESCE(?, display_name),
+                            auth_provider = COALESCE(?, auth_provider),
+                            email_verified = ?,
+                            updated_at = ?,
+                            last_login_at = ?
+                        WHERE id = ?
+                        """,
+                        (
+                            email,
+                            display_name,
+                            auth_provider,
+                            1 if email_verified else 0,
+                            now,
+                            now,
+                            uid,
+                        ),
+                    )
+                conn.commit()
+                row = conn.execute(
+                    "SELECT * FROM users WHERE id = ?", (uid,)
+                ).fetchone()
+                org = conn.execute(
+                    "SELECT * FROM organizations WHERE id = ?", (row["org_id"],)
+                ).fetchone()
+                user_record = _row_to_user(row, org)
+                created = False
         finally:
             conn.close()
+
+    ensure_creator_plan_for_org(user_record.org_id, email)
+    refreshed = get_user(uid)
+    return (refreshed if refreshed is not None else user_record), created
 
 
 def _row_to_scan(row: sqlite3.Row) -> ScanRecord:
     keys = row.keys()
+    findings_count = None
+    critical_high_count = None
+    if "findings_count" in keys and row["findings_count"] is not None:
+        findings_count = int(row["findings_count"])
+    if "critical_high_count" in keys and row["critical_high_count"] is not None:
+        critical_high_count = int(row["critical_high_count"])
     return ScanRecord(
         id=row["id"],
         org_id=row["org_id"],
@@ -494,6 +439,8 @@ def _row_to_scan(row: sqlite3.Row) -> ScanRecord:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         kind=str(row["kind"]) if "kind" in keys and row["kind"] else "full",
+        findings_count=findings_count,
+        critical_high_count=critical_high_count,
     )
 
 
@@ -538,6 +485,133 @@ def create_scan_record(
             conn.close()
 
 
+def reserve_scan_quota_and_create_records(
+    *,
+    scan_id: str,
+    org_id: str,
+    target: str,
+    max_targets: int | None,
+    scans_per_month: int | None,
+) -> QuotaReservation:
+    """Atomically reserve monthly scan/target quota and create scan/site rows.
+
+    The BEGIN IMMEDIATE transaction takes SQLite's write lock before quota is
+    counted, so concurrent requests cannot both observe the same under-limit
+    usage and then insert usage rows.
+    """
+    init_accounts_schema()
+    now = _utc_now()
+    month_start = datetime.now(timezone.utc).replace(
+        day=1, hour=0, minute=0, second=0, microsecond=0
+    ).isoformat()
+
+    with _lock:
+        conn = _connect()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            target_count = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(DISTINCT target) FROM (
+                        SELECT target FROM scans WHERE org_id = ?
+                        UNION
+                        SELECT target FROM sites WHERE org_id = ? AND active = 1
+                    )
+                    """,
+                    (org_id, org_id),
+                ).fetchone()[0]
+            )
+            existing_target = conn.execute(
+                """
+                SELECT 1 FROM (
+                    SELECT target FROM scans WHERE org_id = ?
+                    UNION
+                    SELECT target FROM sites WHERE org_id = ? AND active = 1
+                )
+                WHERE target = ?
+                LIMIT 1
+                """,
+                (org_id, org_id, target),
+            ).fetchone()
+            monthly_scans = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*) FROM scans
+                    WHERE org_id = ?
+                      AND created_at >= ?
+                      AND COALESCE(kind, 'full') = 'full'
+                    """,
+                    (org_id, month_start),
+                ).fetchone()[0]
+            )
+
+            if existing_target is None and max_targets is not None and target_count >= max_targets:
+                conn.rollback()
+                raise QuotaExceededError(
+                    "target_quota_exceeded",
+                    "Your plan's authorized target limit has been reached.",
+                    max_targets,
+                )
+            if scans_per_month is not None and monthly_scans >= scans_per_month:
+                conn.rollback()
+                raise QuotaExceededError(
+                    "scan_quota_exceeded",
+                    "Your plan's monthly scan limit has been reached.",
+                    scans_per_month,
+                )
+
+            conn.execute(
+                """
+                INSERT INTO scans (
+                    id, org_id, target, status, kind, created_at, updated_at
+                ) VALUES (?, ?, ?, 'pending', 'full', ?, ?)
+                """,
+                (scan_id, org_id, target, now, now),
+            )
+
+            existing_site = conn.execute(
+                "SELECT * FROM sites WHERE org_id = ? AND target = ?",
+                (org_id, target),
+            ).fetchone()
+            if existing_site is None:
+                site_id = str(uuid.uuid4())
+                conn.execute(
+                    """
+                    INSERT INTO sites (
+                        id, org_id, target, active, created_at, updated_at
+                    ) VALUES (?, ?, ?, 1, ?, ?)
+                    """,
+                    (site_id, org_id, target, now, now),
+                )
+            else:
+                site_id = existing_site["id"]
+                conn.execute(
+                    """
+                    UPDATE sites SET active = 1, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (now, site_id),
+                )
+
+            conn.commit()
+            scan_row = conn.execute(
+                "SELECT * FROM scans WHERE id = ?", (scan_id,)
+            ).fetchone()
+            site_row = conn.execute(
+                "SELECT * FROM sites WHERE id = ?", (site_id,)
+            ).fetchone()
+            return QuotaReservation(
+                scan=_row_to_scan(scan_row),
+                site=_row_to_site(site_row),
+            )
+        except Exception:
+            if conn.in_transaction:
+                conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+
 def update_scan_record(
     scan_id: str,
     *,
@@ -545,6 +619,8 @@ def update_scan_record(
     current_node: str | None,
     overall_risk_score: float | None = None,
     severity: str | None = None,
+    findings_count: int | None = None,
+    critical_high_count: int | None = None,
 ) -> None:
     with _lock:
         conn = _connect()
@@ -556,6 +632,8 @@ def update_scan_record(
                     current_node = ?,
                     overall_risk_score = COALESCE(?, overall_risk_score),
                     severity = COALESCE(?, severity),
+                    findings_count = COALESCE(?, findings_count),
+                    critical_high_count = COALESCE(?, critical_high_count),
                     updated_at = ?
                 WHERE id = ?
                 """,
@@ -564,6 +642,8 @@ def update_scan_record(
                     current_node,
                     overall_risk_score,
                     severity,
+                    findings_count,
+                    critical_high_count,
                     _utc_now(),
                     scan_id,
                 ),
@@ -598,6 +678,35 @@ def list_org_scans(
                 (org_id, page_size, offset),
             ).fetchall()
             return [_row_to_scan(row) for row in rows], total
+        finally:
+            conn.close()
+
+
+def list_stale_active_scans(*, older_than_iso: str) -> list[ScanRecord]:
+    """Return active scans that should be resolved during service startup."""
+    active_statuses = (
+        "pending",
+        "running",
+        "recon",
+        "detecting",
+        "scoring",
+        "awaiting_approval",
+        "in_progress",
+    )
+    placeholders = ",".join("?" for _ in active_statuses)
+    with _lock:
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                f"""
+                SELECT * FROM scans
+                WHERE status IN ({placeholders})
+                  AND updated_at < ?
+                ORDER BY updated_at ASC
+                """,
+                (*active_statuses, older_than_iso),
+            ).fetchall()
+            return [_row_to_scan(row) for row in rows]
         finally:
             conn.close()
 
@@ -687,9 +796,198 @@ def scan_to_dict(scan: ScanRecord) -> dict[str, Any]:
         "overall_risk_score": scan.overall_risk_score,
         "severity": scan.severity,
         "kind": scan.kind,
+        "findings_count": scan.findings_count,
+        "critical_high_count": scan.critical_high_count,
         "created_at": scan.created_at,
         "updated_at": scan.updated_at,
     }
+
+
+def get_scan_record(scan_id: str) -> ScanRecord | None:
+    with _lock:
+        conn = _connect()
+        try:
+            row = conn.execute(
+                "SELECT * FROM scans WHERE id = ?", (scan_id,)
+            ).fetchone()
+            return _row_to_scan(row) if row else None
+        finally:
+            conn.close()
+
+
+def list_org_risk_trend(
+    org_id: str,
+    *,
+    target: str | None = None,
+    limit: int = 50,
+) -> list[ScanRecord]:
+    """Completed full scans for risk-over-time charts (excludes watch jobs)."""
+    with _lock:
+        conn = _connect()
+        try:
+            if target:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM scans
+                    WHERE org_id = ?
+                      AND target = ?
+                      AND COALESCE(kind, 'full') = 'full'
+                      AND status = 'completed'
+                      AND overall_risk_score IS NOT NULL
+                    ORDER BY created_at ASC
+                    LIMIT ?
+                    """,
+                    (org_id, target, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM scans
+                    WHERE org_id = ?
+                      AND COALESCE(kind, 'full') = 'full'
+                      AND status = 'completed'
+                      AND overall_risk_score IS NOT NULL
+                    ORDER BY created_at ASC
+                    LIMIT ?
+                    """,
+                    (org_id, limit),
+                ).fetchall()
+            return [_row_to_scan(row) for row in rows]
+        finally:
+            conn.close()
+
+
+# --- Verify Fix history persistence -------------------------------------------
+
+
+def save_finding_fix_verification(
+    *,
+    record_id: str,
+    scan_id: str,
+    org_id: str,
+    finding_id: str,
+    finding_url: str,
+    finding_type: str,
+    result: str,
+    evidence: str | None,
+    verification_status: str | None,
+) -> dict[str, Any]:
+    init_accounts_schema()
+    now = _utc_now()
+    with _lock:
+        conn = _connect()
+        try:
+            conn.execute(
+                """
+                INSERT INTO finding_fix_verifications (
+                    id, scan_id, org_id, finding_id, finding_url, finding_type,
+                    result, evidence, verification_status, checked_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record_id,
+                    scan_id,
+                    org_id,
+                    finding_id,
+                    finding_url,
+                    finding_type,
+                    result,
+                    evidence,
+                    verification_status,
+                    now,
+                ),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT * FROM finding_fix_verifications WHERE id = ?",
+                (record_id,),
+            ).fetchone()
+            return dict(row)
+        finally:
+            conn.close()
+
+
+def get_latest_finding_fix_verification(
+    scan_id: str, finding_id: str
+) -> dict[str, Any] | None:
+    init_accounts_schema()
+    with _lock:
+        conn = _connect()
+        try:
+            row = conn.execute(
+                """
+                SELECT * FROM finding_fix_verifications
+                WHERE scan_id = ? AND finding_id = ?
+                ORDER BY checked_at DESC
+                LIMIT 1
+                """,
+                (scan_id, finding_id),
+            ).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+
+def list_finding_fix_verifications(
+    scan_id: str, finding_id: str, *, limit: int = 50
+) -> list[dict[str, Any]]:
+    init_accounts_schema()
+    with _lock:
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                """
+                SELECT * FROM finding_fix_verifications
+                WHERE scan_id = ? AND finding_id = ?
+                ORDER BY checked_at DESC
+                LIMIT ?
+                """,
+                (scan_id, finding_id, limit),
+            ).fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+
+def list_scan_fix_verification_summaries(scan_id: str) -> dict[str, dict[str, Any]]:
+    """Latest verify-fix result + attempt count per finding_id."""
+    init_accounts_schema()
+    with _lock:
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                """
+                SELECT f.*
+                FROM finding_fix_verifications f
+                INNER JOIN (
+                    SELECT finding_id, MAX(checked_at) AS max_checked
+                    FROM finding_fix_verifications
+                    WHERE scan_id = ?
+                    GROUP BY finding_id
+                ) latest
+                  ON f.finding_id = latest.finding_id
+                 AND f.checked_at = latest.max_checked
+                WHERE f.scan_id = ?
+                """,
+                (scan_id, scan_id),
+            ).fetchall()
+            out: dict[str, dict[str, Any]] = {}
+            for row in rows:
+                rec = dict(row)
+                count = int(
+                    conn.execute(
+                        """
+                        SELECT COUNT(*) FROM finding_fix_verifications
+                        WHERE scan_id = ? AND finding_id = ?
+                        """,
+                        (scan_id, rec["finding_id"]),
+                    ).fetchone()[0]
+                )
+                rec["attempt_count"] = count
+                out[str(rec["finding_id"])] = rec
+            return out
+        finally:
+            conn.close()
 
 
 def user_to_dict(user: UserRecord) -> dict[str, Any]:
@@ -734,7 +1032,94 @@ def get_organization(org_id: str) -> Organization | None:
                     if "watch_emails_enabled" in keys
                     else 1
                 ),
+                brand_name=(
+                    row["brand_name"] if "brand_name" in keys else None
+                ),
+                brand_logo_path=(
+                    row["brand_logo_path"] if "brand_logo_path" in keys else None
+                ),
             )
+        finally:
+            conn.close()
+
+
+def update_organization_branding(
+    org_id: str,
+    *,
+    brand_name: str | None = None,
+    brand_logo_path: str | None = None,
+    clear_logo: bool = False,
+) -> Organization | None:
+    """Persist Agency white-label brand name and/or logo path."""
+    init_accounts_schema()
+    now = _utc_now()
+    with _lock:
+        conn = _connect()
+        try:
+            row = conn.execute(
+                "SELECT * FROM organizations WHERE id = ?", (org_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            keys = row.keys()
+            next_name = (
+                brand_name
+                if brand_name is not None
+                else (row["brand_name"] if "brand_name" in keys else None)
+            )
+            if clear_logo:
+                next_logo: str | None = None
+            elif brand_logo_path is not None:
+                next_logo = brand_logo_path
+            else:
+                next_logo = (
+                    row["brand_logo_path"] if "brand_logo_path" in keys else None
+                )
+            conn.execute(
+                """
+                UPDATE organizations SET
+                    brand_name = ?,
+                    brand_logo_path = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (next_name, next_logo, now, org_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return get_organization(org_id)
+
+
+def branding_assets_dir() -> Path:
+    """Directory for uploaded Agency logos (under the accounts data root)."""
+    path = get_accounts_db_path().parent / "branding"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def claim_webhook_event(event_hash: str) -> bool:
+    """Return True when this webhook payload has not been processed before."""
+    init_accounts_schema()
+    now = _utc_now()
+    with _lock:
+        conn = _connect()
+        try:
+            existing = conn.execute(
+                "SELECT 1 FROM processed_webhook_events WHERE event_hash = ?",
+                (event_hash,),
+            ).fetchone()
+            if existing is not None:
+                return False
+            conn.execute(
+                """
+                INSERT INTO processed_webhook_events (event_hash, processed_at)
+                VALUES (?, ?)
+                """,
+                (event_hash, now),
+            )
+            conn.commit()
+            return True
         finally:
             conn.close()
 
@@ -1261,6 +1646,239 @@ def mark_email_retry(email_id: str, *, error: str, delay_seconds: int) -> None:
             conn.close()
 
 
+def _row_to_site_auth(row: sqlite3.Row) -> SiteAuthCredentialRecord:
+    return SiteAuthCredentialRecord(
+        site_id=row["site_id"],
+        org_id=row["org_id"],
+        login_url=row["login_url"],
+        username_field=row["username_field"],
+        password_field=row["password_field"],
+        encrypted_data_key=bytes(row["encrypted_data_key"]),
+        encrypted_payload=bytes(row["encrypted_payload"]),
+        username_hint=row["username_hint"],
+        credentials_consent_user_id=row["credentials_consent_user_id"],
+        credentials_consent_at=row["credentials_consent_at"],
+        excluded_paths_json=row["excluded_paths_json"] or "[]",
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def get_site_auth_credentials(
+    site_id: str,
+    *,
+    org_id: str | None = None,
+) -> SiteAuthCredentialRecord | None:
+    """Fetch site credentials, optionally scoped to an organization (IDOR-safe)."""
+    init_accounts_schema()
+    with _lock:
+        conn = _connect()
+        try:
+            if org_id is not None:
+                row = conn.execute(
+                    """
+                    SELECT * FROM site_auth_credentials
+                    WHERE site_id = ? AND org_id = ?
+                    """,
+                    (site_id, org_id),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT * FROM site_auth_credentials WHERE site_id = ?",
+                    (site_id,),
+                ).fetchone()
+            return _row_to_site_auth(row) if row else None
+        finally:
+            conn.close()
+
+
+def probe_accounts_db() -> tuple[bool, str | None]:
+    """Return (ok, error) for health checks — verifies SQLite is readable."""
+    try:
+        init_accounts_schema()
+        with _lock:
+            conn = _connect()
+            try:
+                conn.execute("SELECT 1").fetchone()
+            finally:
+                conn.close()
+        return True, None
+    except Exception as exc:  # noqa: BLE001 - health probe must never raise
+        return False, str(exc)
+
+
+def get_site_auth_credentials_by_target(
+    org_id: str, target: str
+) -> SiteAuthCredentialRecord | None:
+    site = get_site_by_target(org_id, target)
+    if site is None:
+        return None
+    return get_site_auth_credentials(site.id)
+
+
+def upsert_site_auth_credentials(
+    *,
+    site_id: str,
+    org_id: str,
+    login_url: str,
+    username_field: str,
+    password_field: str,
+    encrypted_data_key: bytes,
+    encrypted_payload: bytes,
+    username_hint: str,
+    credentials_consent_user_id: str,
+    credentials_consent_at: str | None = None,
+    excluded_paths: list[str] | None = None,
+) -> SiteAuthCredentialRecord:
+    """Store or replace encrypted credentials + consent attestation for a site."""
+    init_accounts_schema()
+    now = _utc_now()
+    consent_at = credentials_consent_at or now
+    paths_json = json.dumps(excluded_paths or [])
+    with _lock:
+        conn = _connect()
+        try:
+            existing = conn.execute(
+                "SELECT site_id FROM site_auth_credentials WHERE site_id = ?",
+                (site_id,),
+            ).fetchone()
+            if existing is None:
+                conn.execute(
+                    """
+                    INSERT INTO site_auth_credentials (
+                        site_id, org_id, login_url, username_field, password_field,
+                        encrypted_data_key, encrypted_payload, username_hint,
+                        credentials_consent_user_id, credentials_consent_at,
+                        excluded_paths_json, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        site_id,
+                        org_id,
+                        login_url,
+                        username_field,
+                        password_field,
+                        encrypted_data_key,
+                        encrypted_payload,
+                        username_hint,
+                        credentials_consent_user_id,
+                        consent_at,
+                        paths_json,
+                        now,
+                        now,
+                    ),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE site_auth_credentials SET
+                        login_url = ?,
+                        username_field = ?,
+                        password_field = ?,
+                        encrypted_data_key = ?,
+                        encrypted_payload = ?,
+                        username_hint = ?,
+                        credentials_consent_user_id = ?,
+                        credentials_consent_at = ?,
+                        excluded_paths_json = ?,
+                        updated_at = ?
+                    WHERE site_id = ?
+                    """,
+                    (
+                        login_url,
+                        username_field,
+                        password_field,
+                        encrypted_data_key,
+                        encrypted_payload,
+                        username_hint,
+                        credentials_consent_user_id,
+                        consent_at,
+                        paths_json,
+                        now,
+                        site_id,
+                    ),
+                )
+            conn.commit()
+            row = conn.execute(
+                "SELECT * FROM site_auth_credentials WHERE site_id = ?",
+                (site_id,),
+            ).fetchone()
+            return _row_to_site_auth(row)
+        finally:
+            conn.close()
+
+
+def update_site_excluded_paths(
+    site_id: str, excluded_paths: list[str]
+) -> SiteAuthCredentialRecord | None:
+    """Update destructive-path exclusions without touching ciphertext."""
+    init_accounts_schema()
+    now = _utc_now()
+    paths_json = json.dumps(excluded_paths)
+    with _lock:
+        conn = _connect()
+        try:
+            conn.execute(
+                """
+                UPDATE site_auth_credentials SET
+                    excluded_paths_json = ?,
+                    updated_at = ?
+                WHERE site_id = ?
+                """,
+                (paths_json, now, site_id),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT * FROM site_auth_credentials WHERE site_id = ?",
+                (site_id,),
+            ).fetchone()
+            return _row_to_site_auth(row) if row else None
+        finally:
+            conn.close()
+
+
+def delete_site_auth_credentials(site_id: str) -> bool:
+    """Fully delete the encrypted credential record. Returns True if a row was removed."""
+    init_accounts_schema()
+    with _lock:
+        conn = _connect()
+        try:
+            cur = conn.execute(
+                "DELETE FROM site_auth_credentials WHERE site_id = ?",
+                (site_id,),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+        finally:
+            conn.close()
+
+
+def site_auth_public_dict(record: SiteAuthCredentialRecord | None) -> dict[str, Any]:
+    """Safe public view — never includes ciphertext or plaintext secrets."""
+    if record is None:
+        return {
+            "configured": False,
+            "username_hint": None,
+            "login_url": None,
+            "username_field": None,
+            "password_field": None,
+            "excluded_paths": [],
+            "credentials_consent_at": None,
+            "credentials_consent_user_id": None,
+        }
+    return {
+        "configured": True,
+        "username_hint": record.username_hint,
+        "login_url": record.login_url,
+        "username_field": record.username_field,
+        "password_field": record.password_field,
+        "excluded_paths": record.excluded_paths,
+        "credentials_consent_at": record.credentials_consent_at,
+        "credentials_consent_user_id": record.credentials_consent_user_id,
+        "updated_at": record.updated_at,
+    }
+
+
 def site_to_dict(site: SiteRecord) -> dict[str, Any]:
     fingerprint = None
     if site.fingerprint_json:
@@ -1268,6 +1886,7 @@ def site_to_dict(site: SiteRecord) -> dict[str, Any]:
             fingerprint = json.loads(site.fingerprint_json)
         except json.JSONDecodeError:
             fingerprint = None
+    auth = site_auth_public_dict(get_site_auth_credentials(site.id))
     return {
         "id": site.id,
         "org_id": site.org_id,
@@ -1278,6 +1897,7 @@ def site_to_dict(site: SiteRecord) -> dict[str, Any]:
         "fingerprint": fingerprint,
         "created_at": site.created_at,
         "updated_at": site.updated_at,
+        "authenticated_scanning": auth,
     }
 
 

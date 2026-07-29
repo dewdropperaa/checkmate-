@@ -276,6 +276,56 @@ def test_id_mismatch_triggers_fallback() -> None:
     assert "ghost-99" not in json.dumps(result["ai_synthesis"]["executive_summary"])
 
 
+def test_free_text_prose_id_mismatch_triggers_fallback() -> None:
+    """Hallucinated id only in prose (not structured fields) must still fail closed."""
+    settings = _settings(gemini_api_key="test-gemini")
+    findings = [_finding("real-1")]
+    state = _base_state(findings)
+
+    payload = json.dumps(
+        {
+            "executive_summary": {
+                "summary_text": (
+                    "Attackers could exploit finding_id ghost-99 to steal customer data "
+                    "even though structured fields look clean."
+                ),
+                "top_risk_finding_id": "real-1",
+                "business_impact_one_liner": "Data theft risk.",
+            },
+            "remediation_roadmap": [
+                {
+                    "finding_ids": ["real-1"],
+                    "rationale": "Fix the confirmed header gap",
+                    "estimated_effort": "trivial",
+                }
+            ],
+        }
+    )
+
+    def _fake_llm(prompt: str, **_k: Any) -> LLMCallResult:
+        return LLMCallResult(
+            response=LLMResponse(text=payload, provider="gemini", model="m"),
+            provider_used="gemini",
+        )
+
+    result = run_ai_synthesis(state, settings=settings, llm_call=_fake_llm)
+    assert result["ai_synthesis"]["status"] == "unavailable"
+    assert result["ai_synthesis"]["fallback_reason"] == FALLBACK_ID_MISMATCH
+
+    refs = extract_referenced_finding_ids(
+        {
+            "executive_summary": {
+                "summary_text": "See finding ghost-99 for details.",
+                "top_risk_finding_id": "real-1",
+            }
+        },
+        known_ids={"real-1"},
+    )
+    assert "ghost-99" in refs
+    assert "real-1" in refs
+    assert validate_referenced_ids(refs, {"real-1"}) == ["ghost-99"]
+
+
 def test_grader_flag_triggers_fallback() -> None:
     settings = _settings(gemini_api_key="test-gemini")
     findings = [_finding("real-1")]
@@ -346,6 +396,34 @@ def test_gemini_rate_limit_falls_back_to_groq() -> None:
     assert result.provider_used == "groq"
     assert result.response is not None
     assert result.response.text == "ok-from-groq"
+
+
+def test_provider_logs_include_scan_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _settings(gemini_api_key="gem-key")
+    captured: list[dict[str, Any]] = []
+
+    def _fake_call(provider: str, prompt: str, **_k: Any) -> LLMResponse:
+        return LLMResponse(text="ok", provider=provider, model="m")
+
+    def _capture_info(msg: str, *args: Any, **kwargs: Any) -> None:
+        extra = kwargs.get("extra") or {}
+        captured.append({"msg": msg, **extra})
+
+    monkeypatch.setattr("core.llm_providers.logger.info", _capture_info)
+
+    result = call_with_fallback(
+        "hello",
+        settings=settings,
+        call_fn=_fake_call,
+        scan_id="scan-corr-1",
+        org_id="org-corr-1",
+    )
+    assert result.provider_used == "gemini"
+    assert captured
+    assert captured[0]["event"] == "ai_llm_provider_served"
+    assert captured[0]["scan_id"] == "scan-corr-1"
+    assert captured[0]["org_id"] == "org-corr-1"
+    assert captured[0]["provider"] == "gemini"
 
 
 def test_both_providers_fail_triggers_deterministic_fallback() -> None:

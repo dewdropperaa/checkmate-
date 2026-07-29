@@ -116,6 +116,15 @@ def _cpe_product_token(criteria: str) -> str | None:
     return parts[4].replace("_", " ").lower()
 
 
+def _iter_cpe_matches(nodes: list[dict[str, Any]]):
+    for node in nodes:
+        for match in node.get("cpeMatch") or []:
+            yield match
+        children = node.get("children") or []
+        if children:
+            yield from _iter_cpe_matches(children)
+
+
 def cve_affects_version(
     cve: dict[str, Any],
     *,
@@ -127,37 +136,34 @@ def cve_affects_version(
     product_space = product_name.lower()
     configurations = cve.get("configurations") or []
     for config in configurations:
-        for node in config.get("nodes") or []:
-            for match in node.get("cpeMatch") or []:
-                if not match.get("vulnerable", True):
+        for match in _iter_cpe_matches(config.get("nodes") or []):
+            if not match.get("vulnerable", True):
+                continue
+            criteria = str(match.get("criteria") or match.get("matchCriteriaId") or "")
+            token = _cpe_product_token(criteria)
+            if token and token not in {product_l, product_space} and product_space not in token:
+                # Still allow if product name appears in criteria.
+                if product_l not in criteria.lower() and product_space not in criteria.lower():
                     continue
-                criteria = str(match.get("criteria") or "")
-                token = _cpe_product_token(criteria)
-                if token and token not in {product_l, product_space} and product_space not in token:
-                    # Still allow if product name appears in criteria.
-                    if product_l not in criteria.lower() and product_space not in criteria.lower():
-                        continue
-                exact = None
-                cpe_parts = criteria.split(":")
-                if len(cpe_parts) > 5 and cpe_parts[5] not in {"*", "-"}:
-                    exact = cpe_parts[5]
-                if version_in_range(
-                    version,
-                    start_including=match.get("versionStartIncluding"),
-                    start_excluding=match.get("versionStartExcluding"),
-                    end_including=match.get("versionEndIncluding"),
-                    end_excluding=match.get("versionEndExcluding"),
-                    exact=exact if not any(
-                        [
-                            match.get("versionStartIncluding"),
-                            match.get("versionStartExcluding"),
-                            match.get("versionEndIncluding"),
-                            match.get("versionEndExcluding"),
-                        ]
-                    )
-                    else None,
-                ):
-                    return True
+            exact = None
+            cpe_parts = criteria.split(":")
+            if len(cpe_parts) > 5 and cpe_parts[5] not in {"*", "-"}:
+                exact = cpe_parts[5]
+            range_fields = [
+                match.get("versionStartIncluding"),
+                match.get("versionStartExcluding"),
+                match.get("versionEndIncluding"),
+                match.get("versionEndExcluding"),
+            ]
+            if version_in_range(
+                version,
+                start_including=match.get("versionStartIncluding"),
+                start_excluding=match.get("versionStartExcluding"),
+                end_including=match.get("versionEndIncluding"),
+                end_excluding=match.get("versionEndExcluding"),
+                exact=exact if not any(range_fields) else None,
+            ):
+                return True
     return False
 
 
@@ -210,9 +216,10 @@ class NvdClient:
         NVD docs: keywordSearch matches description text; we then apply CPE
         version-range filtering client-side so we do not alert on every mention.
         """
+        page_size = min(results_per_page, 2000)
         params: dict[str, Any] = {
             "keywordSearch": product_name,
-            "resultsPerPage": min(results_per_page, 2000),
+            "resultsPerPage": page_size,
             "startIndex": 0,
         }
         if since is not None:
@@ -222,27 +229,38 @@ class NvdClient:
             params["lastModStartDate"] = start.strftime("%Y-%m-%dT%H:%M:%S.000")
             params["lastModEndDate"] = end.strftime("%Y-%m-%dT%H:%M:%S.000")
 
-        await self._limiter.acquire()
+        collected: list[dict[str, Any]] = []
         async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.get(
-                NVD_CVE_URL,
-                params=params,
-                headers=self._headers(),
-            )
-            if response.status_code == 403:
-                # Rate limited — back off hard then retry once.
-                await asyncio.sleep(30.0)
+            while True:
                 await self._limiter.acquire()
                 response = await client.get(
                     NVD_CVE_URL,
                     params=params,
                     headers=self._headers(),
                 )
-            response.raise_for_status()
-            payload = response.json()
+                if response.status_code == 403:
+                    # Rate limited — back off hard then retry once.
+                    await asyncio.sleep(30.0)
+                    await self._limiter.acquire()
+                    response = await client.get(
+                        NVD_CVE_URL,
+                        params=params,
+                        headers=self._headers(),
+                    )
+                response.raise_for_status()
+                payload = response.json()
+                vulns = payload.get("vulnerabilities") or []
+                collected.extend(item.get("cve") or {} for item in vulns if item.get("cve"))
 
-        vulns = payload.get("vulnerabilities") or []
-        return [item.get("cve") or {} for item in vulns if item.get("cve")]
+                total = int(payload.get("totalResults") or len(collected))
+                returned = int(payload.get("resultsPerPage") or len(vulns) or page_size)
+                start = int(payload.get("startIndex") or params["startIndex"])
+                next_start = start + returned
+                if next_start >= total or not vulns:
+                    break
+                params["startIndex"] = next_start
+
+        return collected
 
     async def find_matching_cves(
         self,

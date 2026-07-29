@@ -1,0 +1,23 @@
+# Copy to terraform.tfvars (gitignored) and fill in real values.
+# Do not commit terraform.tfvars — it may contain origin IPs and account IDs.
+
+cloudflare_account_id = "YOUR_CLOUDFLARE_ACCOUNT_ID"
+domain                = "checkmate.ma"
+
+# true  = Terraform creates the zone; then YOU must point registrar NS
+#         to output cloudflare_nameservers (manual).
+# false = zone already exists; set zone_id_override.
+create_zone      = true
+zone_id_override = ""
+
+web_origin_cname = "cname.vercel-dns.com"
+api_subdomain    = "api"
+api_origin_ipv4  = "203.0.113.10" # replace with real API host public IPv4
+# api_origin_ipv6 = "2001:db8::1"
+
+ssl_mode                   = "strict"
+security_level             = "medium"
+enable_bot_fight_mode      = true
+cloudflare_plan            = "free" # set "pro" after upgrading for OWASP + extra RL
+enable_origin_ca           = true
+enable_authenticated_origin_pulls = false # enable only after origin trusts AOP CA

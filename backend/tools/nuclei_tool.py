@@ -180,6 +180,40 @@ class NucleiTool(BaseSecurityTool):
         raw_results = parse_json_output(stdout, self.name)
         findings = self._parse_findings(raw_results, target)
 
+        if exit_code != 0:
+            return ToolResult(
+                tool_name=self.name,
+                target=target,
+                success=False,
+                error=(
+                    f"Nuclei exited with code {exit_code}"
+                    + (f": {stderr.strip()}" if stderr.strip() else "")
+                ),
+                data={
+                    "findings": [f.model_dump_for_state() for f in findings],
+                    "finding_count": len(findings),
+                    "raw_count": len(raw_results),
+                },
+                stdout=stdout,
+                stderr=stderr,
+                exit_code=exit_code,
+                timed_out=False,
+            )
+
+        # Non-empty stdout that yielded zero parseable records is malformed output.
+        if stdout.strip() and not raw_results and not findings:
+            return ToolResult(
+                tool_name=self.name,
+                target=target,
+                success=False,
+                error="Nuclei produced non-empty output that could not be parsed as JSON",
+                data={"findings": [], "finding_count": 0, "raw_count": 0},
+                stdout=stdout,
+                stderr=stderr,
+                exit_code=exit_code,
+                timed_out=False,
+            )
+
         return ToolResult(
             tool_name=self.name,
             target=target,
@@ -261,6 +295,43 @@ class NucleiTool(BaseSecurityTool):
         for result in raw_results:
             matched_at = result.get("matched-at", result.get("host", ""))
             findings.extend(self._parse_findings([result], matched_at))
+
+        if exit_code != 0:
+            return ToolResult(
+                tool_name=self.name,
+                target="batch",
+                success=False,
+                error=(
+                    f"Nuclei batch exited with code {exit_code}"
+                    + (f": {stderr.strip()}" if stderr.strip() else "")
+                ),
+                data={
+                    "findings": [f.model_dump_for_state() for f in findings],
+                    "finding_count": len(findings),
+                    "targets_scanned": len(targets),
+                },
+                stdout=stdout,
+                stderr=stderr,
+                exit_code=exit_code,
+                timed_out=False,
+            )
+
+        if stdout.strip() and not raw_results and not findings:
+            return ToolResult(
+                tool_name=self.name,
+                target="batch",
+                success=False,
+                error="Nuclei batch produced non-empty output that could not be parsed as JSON",
+                data={
+                    "findings": [],
+                    "finding_count": 0,
+                    "targets_scanned": len(targets),
+                },
+                stdout=stdout,
+                stderr=stderr,
+                exit_code=exit_code,
+                timed_out=False,
+            )
 
         return ToolResult(
             tool_name=self.name,

@@ -185,6 +185,31 @@ describe("AuthForm validation", () => {
     });
   });
 
+  it("shows verify-email state when sign-in requires verification", async () => {
+    const user = userEvent.setup();
+    signInWithEmail.mockResolvedValue({
+      ok: true,
+      uid: "u1",
+      email: "user@example.com",
+      needsEmailVerification: true,
+    });
+    renderForm("signin");
+
+    await user.type(
+      screen.getByRole("textbox", { name: /^email$/i }),
+      "user@example.com",
+    );
+    await user.type(screen.getByLabelText(/^password$/i), "GoodPass1");
+    await user.click(screen.getByRole("button", { name: /^sign in$/i }));
+
+    expect(
+      await screen.findByRole("heading", { name: /verify your email/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/check your spam/i)).toBeInTheDocument();
+    expect(replace).not.toHaveBeenCalled();
+    expect(signOut).toHaveBeenCalled();
+  });
+
   it("shows verify-email success state after signup instead of dashboard", async () => {
     const user = userEvent.setup();
     signUpWithEmail.mockResolvedValue({

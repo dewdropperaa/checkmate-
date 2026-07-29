@@ -108,6 +108,36 @@ def test_mint_and_resolve_extension_token(auth_client: TestClient):
     assert resolved.org_id == body["token_meta"]["org_id"]
 
 
+def test_extension_token_mint_rate_limit_returns_429(auth_client: TestClient):
+    _sync(auth_client)
+    from app import main as api_main
+    from core.config import get_settings
+
+    settings = get_settings()
+    old_account_limit = settings.auth_rate_limit_max_requests_per_account
+    old_ip_limit = settings.auth_rate_limit_max_requests_per_ip
+    settings.auth_rate_limit_max_requests_per_account = 1
+    settings.auth_rate_limit_max_requests_per_ip = 100
+    api_main._auth_rate_limiter._events.clear()  # noqa: SLF001 - isolate boundary test
+    try:
+        first = auth_client.post(
+            "/auth/extension/token",
+            headers={"Authorization": "Bearer valid-token"},
+        )
+        second = auth_client.post(
+            "/auth/extension/token",
+            headers={"Authorization": "Bearer valid-token"},
+        )
+    finally:
+        settings.auth_rate_limit_max_requests_per_account = old_account_limit
+        settings.auth_rate_limit_max_requests_per_ip = old_ip_limit
+        api_main._auth_rate_limiter._events.clear()  # noqa: SLF001
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert second.json()["detail"]["error"] == "auth_rate_limit_exceeded"
+
+
 def test_revoke_extension_tokens(auth_client: TestClient):
     _sync(auth_client)
     minted = auth_client.post(

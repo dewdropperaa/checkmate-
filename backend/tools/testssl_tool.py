@@ -191,10 +191,19 @@ class TestSSLTool(BaseSecurityTool):
 
         findings = self._parse_findings(stdout, target)
 
+        succeeded = exit_code == 0 or len(findings) > 0
         return ToolResult(
             tool_name=self.name,
             target=target,
-            success=exit_code == 0 or len(findings) > 0,
+            success=succeeded,
+            error=(
+                None
+                if succeeded
+                else (
+                    f"testssl.sh exited with code {exit_code} and produced no findings"
+                    + (f": {stderr.strip()[:300]}" if stderr.strip() else "")
+                )
+            ),
             data={
                 "findings": [f.model_dump_for_state() for f in findings],
                 "finding_count": len(findings),

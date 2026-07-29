@@ -24,11 +24,21 @@ _RETRYABLE_MARKERS = (
     "cancelled",
 )
 
+# Long-running / terminal failures that must not burn retry budget.
+_NON_RETRYABLE_MARKERS = (
+    "zap scan timed out",
+    "zap unreachable",
+    "zap unavailable",
+    "active scanning skipped",
+)
+
 
 def is_retryable_error(message: str | None) -> bool:
     if not message:
         return False
     lower = message.lower()
+    if any(marker in lower for marker in _NON_RETRYABLE_MARKERS):
+        return False
     return any(marker in lower for marker in _RETRYABLE_MARKERS)
 
 

@@ -8,7 +8,8 @@ Multi-agent web vulnerability scanner with a **Chrome Manifest V3 extension** fr
 checkmate/
 ├── backend/          # FastAPI API, agents, tool wrappers, scope enforcement
 ├── extension/        # Chrome MV3 extension (Vite + TypeScript)
-└── web/              # Marketing site (Next.js) — FR/EN landing + auth stubs
+├── web/              # Marketing site (Next.js) — FR/EN landing + auth stubs
+└── terraform/        # Cloudflare edge (WAF/DNS/SSL) — see terraform/cloudflare/README.md
 ```
 
 ## Prerequisites
@@ -77,14 +78,88 @@ pytest
 
 ### Docker
 
+Production-oriented Compose (ZAP is **not** published on a host port — only
+reachable as `http://zap:8080` on the private Compose network):
+
 ```bash
 cd backend
 cp .env.example .env
-# Edit .env with authorized targets
+# Set AUTHORIZED_TARGETS and a strong ZAP_API_KEY (required).
 docker compose up --build
 ```
 
+Local development with ZAP reachable from the host on loopback only:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
+
+Post-deploy ZAP smoke test (healthy container + `/health` zap_ready + minimal scan):
+
+```bash
+bash scripts/smoke_zap_deploy.sh
+# Windows:
+powershell -File scripts/smoke_zap_deploy.ps1
+```
+
+ZAP image is pinned to `ghcr.io/zaproxy/zaproxy:2.17.0@sha256:8d387b1a63e3425beef4846e39719f5af2a787753af2d8b6558c6257d7a577a2` — upgrade deliberately
+after testing; do not switch back to `:latest` / `:stable` (digest is authoritative).
+
 External tool binaries can be placed in `backend/tools-bin/` and are mounted at `/opt/tools` inside the container.
+
+**Sizing:** give the host ≥4 GiB free RAM when running ZAP (2 GiB container
+limit) alongside the backend. Concurrent active scans are capped via
+`ZAP_MAX_CONCURRENT` (default 1) and conservative `/scan` concurrency limits.
+
+**Persistent data:** production Compose mounts named volumes for `/app/data`
+(accounts SQLite DB, LangGraph checkpoints, scan registry/audit) and
+`/app/reports` (generated scan artifacts). Container recreate/redeploy must not
+wipe customer history.
+
+#### Backup and restore (runbook)
+
+Back up before major upgrades or host migrations:
+
+```bash
+# From the backend directory on the Docker host
+docker compose exec backend sh -c 'tar czf - -C / app/data app/reports' > checkmate-data-backup.tgz
+```
+
+Restore into a fresh stack (stop backend first to avoid SQLite write races):
+
+```bash
+docker compose stop backend
+docker run --rm -v backend_app-data:/data -v backend_app-reports:/reports \
+  -v "$PWD":/backup alpine sh -c 'cd / && tar xzf /backup/checkmate-data-backup.tgz'
+docker compose start backend
+```
+
+Volume names are prefixed with the Compose project name (often `backend_`).
+Adjust `backend_app-data` / `backend_app-reports` to match `docker volume ls`.
+
+> **HIGH PRIORITY follow-up:** automate scheduled off-host backups (e.g. cron +
+> object storage) — manual tar backups are a launch baseline, not a DR strategy.
+
+#### Database migrations
+
+Schema changes are managed with Alembic. Migrations run automatically on
+container start (`scripts/docker-entrypoint.sh`) and during API lifespan before
+serving traffic. To apply manually:
+
+```bash
+cd backend
+python -c "from core.migrations import upgrade_database; upgrade_database()"
+```
+
+Generate a new revision after editing the baseline in `core/db_schema.py`:
+
+```bash
+cd backend
+alembic revision -m "describe_change"
+```
+
+`GET /health` reports `migrations_current` — a deploy is not ready until this
+is `true`.
 
 ## Extension setup
 

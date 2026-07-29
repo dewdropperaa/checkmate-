@@ -6,12 +6,18 @@ import base64
 import html
 import json
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from agents.state import ScanState
 from core.config import get_settings
+from core.scan_disclaimer import (
+    COVERAGE_LIMITATIONS_HEADING,
+    COVERAGE_SECTION_TITLE,
+    SCAN_COVERAGE_DISCLAIMER,
+)
 from core.pdf_design import (
     COLORS,
     SPACING,
@@ -25,7 +31,236 @@ from fpdf import FPDF
 
 _REPORTS_ROOT = Path(__file__).resolve().parent.parent / "reports"
 _LOGO_PATH = Path(__file__).resolve().parent.parent / "assets" / "logo.png"
+_DEFAULT_BRAND_NAME = "Checkmate"
+_DEFAULT_TAGLINE = "Checkmate Vulnerability Assessment"
 _SEVERITY_ORDER = ("critical", "high", "medium", "low", "info")
+
+
+def build_coverage_section(report: dict[str, Any]) -> dict[str, Any]:
+    """Structured coverage + fixed disclaimer for all report formats and the UI."""
+    coverage = (report.get("severity_scores") or {}).get("scan_coverage") or {}
+    modules_run = list(
+        dict.fromkeys(
+            list(coverage.get("recon_modules_run") or [])
+            + list(coverage.get("detection_modules_run") or [])
+        )
+    )
+    return {
+        "title": COVERAGE_SECTION_TITLE,
+        "limitations_heading": COVERAGE_LIMITATIONS_HEADING,
+        "disclaimer": SCAN_COVERAGE_DISCLAIMER,
+        "modules_run": modules_run,
+        "modules_failed": list(coverage.get("modules_failed") or []),
+        "modules_skipped": list(coverage.get("modules_skipped") or []),
+        "modules_not_applicable": list(coverage.get("modules_not_applicable") or []),
+        "modules_rejected": list(coverage.get("modules_rejected") or []),
+        "coverage_notes": list(coverage.get("coverage_notes") or []),
+        "score_basis": coverage.get("score_basis"),
+        "authenticated_scanning": coverage.get("authenticated_scanning") or {},
+        "recon_partial_failure": bool(coverage.get("recon_partial_failure")),
+    }
+
+
+def _format_module_list(items: list[Any]) -> str:
+    if not items:
+        return "_None_"
+    return ", ".join(f"`{m}`" for m in items)
+
+
+def _coverage_markdown(report: dict[str, Any]) -> list[str]:
+    cov = build_coverage_section(report)
+    lines = [
+        f"## {cov['title']}",
+        "",
+        f"- **Modules run successfully:** {_format_module_list(cov['modules_run'])}",
+        f"- **Modules failed:** {_format_module_list(cov['modules_failed'])}",
+        f"- **Modules skipped:** {_format_module_list(cov['modules_skipped'])}",
+        f"- **Modules not applicable:** {_format_module_list(cov['modules_not_applicable'])}",
+    ]
+    if cov["modules_rejected"]:
+        lines.append(
+            f"- **Active modules rejected:** {_format_module_list(cov['modules_rejected'])}"
+        )
+    if cov["score_basis"]:
+        lines.append(f"- **Score basis:** {_md_escape(str(cov['score_basis']))}")
+    for note in cov["coverage_notes"]:
+        lines.append(f"- **Note:** {_md_escape(str(note))}")
+    auth = cov["authenticated_scanning"] or {}
+    if auth.get("coverage_warning"):
+        lines.append(f"- **Authenticated scanning:** {_md_escape(str(auth['coverage_warning']))}")
+    elif auth.get("enabled"):
+        lines.append("- **Authenticated scanning:** enabled for the configured account/paths")
+    lines.extend(
+        [
+            "",
+            f"### {cov['limitations_heading']}",
+            "",
+            cov["disclaimer"],
+            "",
+        ]
+    )
+    return lines
+
+
+def _coverage_html(report: dict[str, Any]) -> str:
+    cov = build_coverage_section(report)
+
+    def esc(value: Any) -> str:
+        return html.escape(str(value))
+
+    def chips(items: list[Any], empty: str = "None") -> str:
+        if not items:
+            return f"<span class='muted'>{esc(empty)}</span>"
+        return " ".join(f"<code>{esc(m)}</code>" for m in items)
+
+    auth = cov["authenticated_scanning"] or {}
+    auth_row = ""
+    if auth.get("coverage_warning"):
+        auth_row = (
+            f"<li><strong>Authenticated scanning:</strong> "
+            f"{esc(auth['coverage_warning'])}</li>"
+        )
+    elif auth.get("enabled"):
+        auth_row = (
+            "<li><strong>Authenticated scanning:</strong> "
+            "enabled for the configured account/paths</li>"
+        )
+    notes = "".join(
+        f"<li><strong>Note:</strong> {esc(n)}</li>" for n in cov["coverage_notes"]
+    )
+    rejected = ""
+    if cov["modules_rejected"]:
+        rejected = (
+            f"<li><strong>Active modules rejected:</strong> "
+            f"{chips(cov['modules_rejected'])}</li>"
+        )
+    score = ""
+    if cov["score_basis"]:
+        score = f"<li><strong>Score basis:</strong> {esc(cov['score_basis'])}</li>"
+
+    return f"""
+  <section class="coverage" id="scan-coverage">
+    <h2>{esc(cov['title'])}</h2>
+    <ul class="coverage-list">
+      <li><strong>Modules run successfully:</strong> {chips(cov['modules_run'])}</li>
+      <li><strong>Modules failed:</strong> {chips(cov['modules_failed'])}</li>
+      <li><strong>Modules skipped:</strong> {chips(cov['modules_skipped'])}</li>
+      <li><strong>Modules not applicable:</strong> {chips(cov['modules_not_applicable'])}</li>
+      {rejected}
+      {score}
+      {notes}
+      {auth_row}
+    </ul>
+    <div class="callout callout-warning coverage-disclaimer">
+      <div class="callout-icon">&#9888;</div>
+      <div class="callout-content">
+        <h4>{esc(cov['limitations_heading'])}</h4>
+        <p>{esc(cov['disclaimer'])}</p>
+      </div>
+    </div>
+  </section>
+"""
+
+
+def _draw_coverage_pdf(pdf: "CheckmatePDF", report: dict[str, Any], y: float) -> float:
+    """Render the mandatory coverage & limitations section; returns new y."""
+    cov = build_coverage_section(report)
+    content_width = pdf.epw
+
+    if y > 240:
+        pdf.add_page()
+        y = SPACING.MARGIN_TOP
+
+    pdf.set_font(TYPOGRAPHY.FONT_SANS, "B", TYPOGRAPHY.SIZE_H2)
+    pdf.set_text_color(31, 41, 55)
+    pdf.set_xy(SPACING.MARGIN_LEFT, y)
+    pdf.cell(content_width, 8, _pdf_safe_text(cov["title"]), align="L")
+    y += 10
+
+    pdf.set_font(TYPOGRAPHY.FONT_SANS, "", TYPOGRAPHY.SIZE_BODY)
+    pdf.set_text_color(55, 65, 81)
+
+    def _line(label: str, items: list[Any]) -> float:
+        nonlocal y
+        text = ", ".join(str(m) for m in items) if items else "None"
+        pdf.set_xy(SPACING.MARGIN_LEFT, y)
+        pdf.multi_cell(
+            content_width,
+            5,
+            _pdf_safe_text(f"{label}: {text}"),
+        )
+        y = pdf.get_y() + 1
+        return y
+
+    _line("Modules run successfully", cov["modules_run"])
+    _line("Modules failed", cov["modules_failed"])
+    _line("Modules skipped", cov["modules_skipped"])
+    _line("Modules not applicable", cov["modules_not_applicable"])
+    if cov["modules_rejected"]:
+        _line("Active modules rejected", cov["modules_rejected"])
+
+    y += 4
+    pdf.set_font(TYPOGRAPHY.FONT_SANS, "B", TYPOGRAPHY.SIZE_H3)
+    pdf.set_text_color(31, 41, 55)
+    pdf.set_xy(SPACING.MARGIN_LEFT, y)
+    pdf.cell(content_width, 6, _pdf_safe_text(cov["limitations_heading"]), align="L")
+    y += 8
+
+    # Mandatory disclaimer — never omit.
+    callout_height = _draw_info_callout(
+        pdf,
+        "Important",
+        [cov["disclaimer"]],
+        SPACING.MARGIN_LEFT,
+        y,
+        content_width,
+    )
+    return y + callout_height + 8
+
+
+@dataclass(frozen=True)
+class ReportBranding:
+    """Resolved report chrome (default Checkmate or Agency white-label)."""
+
+    brand_name: str
+    tagline: str
+    logo_path: Path | None
+    white_label: bool
+
+
+def resolve_report_branding(org_id: str | None) -> ReportBranding:
+    """Return Checkmate defaults, or Agency brand name/logo when gated + set."""
+    default_logo = _LOGO_PATH if _LOGO_PATH.is_file() else None
+    default = ReportBranding(
+        brand_name=_DEFAULT_BRAND_NAME,
+        tagline=_DEFAULT_TAGLINE,
+        logo_path=default_logo,
+        white_label=False,
+    )
+    if not org_id:
+        return default
+    try:
+        from core.accounts import get_organization
+        from core.plans import can_use_white_label_reports
+    except ImportError:
+        return default
+    if not can_use_white_label_reports(org_id):
+        return default
+    org = get_organization(org_id)
+    if org is None:
+        return default
+    brand_name = (org.brand_name or org.name or "").strip() or _DEFAULT_BRAND_NAME
+    logo_path = default_logo
+    if org.brand_logo_path:
+        candidate = Path(org.brand_logo_path)
+        if candidate.is_file():
+            logo_path = candidate
+    return ReportBranding(
+        brand_name=brand_name,
+        tagline=f"{brand_name} Vulnerability Assessment",
+        logo_path=logo_path,
+        white_label=True,
+    )
 
 _USER_FACING_ERRORS: dict[str, str] = {
     "scan_timeout": (
@@ -399,6 +634,18 @@ def _executive_summary(report: dict[str, Any]) -> dict[str, Any]:
         notes.append(
             "Some tools did not complete: " + ", ".join(str(m) for m in failed) + "."
         )
+    auth_cov = coverage.get("authenticated_scanning") or {}
+    if auth_cov.get("coverage_warning"):
+        notes.append(str(auth_cov["coverage_warning"]))
+    for warning in auth_cov.get("warnings") or []:
+        if warning and warning not in notes:
+            notes.append(str(warning))
+    if auth_cov.get("configured") and auth_cov.get("excluded_paths"):
+        notes.append(
+            "Excluded destructive paths: "
+            + ", ".join(str(p) for p in auth_cov["excluded_paths"])
+            + "."
+        )
 
     return {
         "risk_label": label,
@@ -425,9 +672,18 @@ def _user_summary(state: ScanState, findings_count: int) -> str:
             "Passive detection findings are included; active tools were skipped."
         )
     if findings_count == 0:
+        coverage = (state.get("severity_scores") or {}).get("scan_coverage") or {}
+        failed = coverage.get("modules_failed") or []
+        risk = (state.get("severity_scores") or {}).get("overall_risk_score", 0.0)
+        if failed:
+            return (
+                "No security findings were detected in the modules that completed, "
+                f"but coverage was incomplete ({', '.join(str(m) for m in failed)}). "
+                f"Overall risk score is {risk} (uncertainty floor applied)."
+            )
         return (
             "No security findings were detected in the modules that ran "
-            "for this scan. Overall risk score is 0."
+            f"for this scan. Overall risk score is {risk}."
         )
     return "Scan completed with findings. Review severity sections below."
 
@@ -452,7 +708,38 @@ def _truncate_findings(
         "rendered_findings": max_findings,
         "message": (
             f"Showing highest-severity {max_findings} of {len(findings)} findings. "
-            "Lower-severity entries were truncated first; full data remains in JSON metadata."
+            "Lower-severity entries were truncated first. "
+            "findings_count reflects the full scan; rendered sections are capped."
+        ),
+    }
+
+
+def _truncate_deduplicated_groups(
+    groups: list[dict[str, Any]],
+    max_groups: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """Cap deduplicated finding groups after collapse so unique types are preserved."""
+    if len(groups) <= max_groups:
+        return groups, None
+    severity_rank = {sev: idx for idx, sev in enumerate(_SEVERITY_ORDER)}
+    prioritized = sorted(
+        groups,
+        key=lambda g: (
+            severity_rank.get(_normalize_severity(g.get("severity")), len(_SEVERITY_ORDER)),
+            -int(
+                g.get("instance_count")
+                or len(g.get("affected_urls") or [])
+                or 1
+            ),
+        ),
+    )
+    return prioritized[:max_groups], {
+        "truncated": True,
+        "total_groups": len(groups),
+        "rendered_groups": max_groups,
+        "message": (
+            f"Showing highest-severity {max_groups} of {len(groups)} unique "
+            "finding groups after deduplication."
         ),
     }
 
@@ -488,11 +775,20 @@ def _remediation_for_finding_type(finding_type: str, finding: dict[str, Any] | N
     return "Review this finding manually and apply least-privilege, input validation, output encoding, and secure-by-default controls."
 
 
-def _logo_data_uri() -> str:
-    if not _LOGO_PATH.is_file():
+def _logo_data_uri(logo_path: Path | None = None) -> str:
+    path = logo_path if logo_path is not None else _LOGO_PATH
+    if path is None or not path.is_file():
         return ""
-    encoded = base64.b64encode(_LOGO_PATH.read_bytes()).decode("ascii")
-    return f"data:image/png;base64,{encoded}"
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    suffix = path.suffix.lower()
+    mime = "image/png"
+    if suffix in {".jpg", ".jpeg"}:
+        mime = "image/jpeg"
+    elif suffix == ".webp":
+        mime = "image/webp"
+    elif suffix == ".gif":
+        mime = "image/gif"
+    return f"data:{mime};base64,{encoded}"
 
 
 def _pdf_safe_text(value: Any) -> str:
@@ -590,10 +886,17 @@ def _group_findings_by_severity_deduplicated(
 ) -> dict[str, list[dict[str, Any]]]:
     """Group findings by severity after deduplication."""
     deduplicated = _deduplicate_findings(findings)
+    return _group_findings_by_severity_from_groups(deduplicated)
+
+
+def _group_findings_by_severity_from_groups(
+    groups: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Group already-deduplicated finding groups by severity."""
     grouped: dict[str, list[dict[str, Any]]] = {
         severity: [] for severity in _SEVERITY_ORDER
     }
-    for finding in deduplicated:
+    for finding in groups:
         severity = _normalize_severity(finding.get("severity"))
         enriched = dict(finding)
         enriched["severity"] = severity
@@ -608,12 +911,24 @@ def _group_findings_by_severity_deduplicated(
 
 
 class CheckmatePDF(FPDF):
-    """Custom PDF class with Checkmate branding and page headers/footers."""
+    """Custom PDF class with Checkmate or Agency white-label branding."""
 
-    def __init__(self, scan_id: str, target: str) -> None:
+    def __init__(
+        self,
+        scan_id: str,
+        target: str,
+        *,
+        branding: ReportBranding | None = None,
+    ) -> None:
         super().__init__()
         self.scan_id = scan_id
         self.target = target
+        self.branding = branding or ReportBranding(
+            brand_name=_DEFAULT_BRAND_NAME,
+            tagline=_DEFAULT_TAGLINE,
+            logo_path=_LOGO_PATH if _LOGO_PATH.is_file() else None,
+            white_label=False,
+        )
         self._is_cover_page = True
 
     def header(self) -> None:
@@ -624,8 +939,9 @@ class CheckmatePDF(FPDF):
         self.set_fill_color(*COLORS.HEADER_BG)
         self.rect(0, 0, 210, 12, style="F")
         # Logo (small)
-        if _LOGO_PATH.is_file():
-            self.image(str(_LOGO_PATH), x=5, y=2, h=8)
+        logo = self.branding.logo_path
+        if logo is not None and logo.is_file():
+            self.image(str(logo), x=5, y=2, h=8)
         # Scan ID
         self.set_font(TYPOGRAPHY.FONT_SANS, "", TYPOGRAPHY.SIZE_TINY)
         self.set_text_color(*COLORS.FG_MUTED)
@@ -957,7 +1273,10 @@ def _draw_finding_card(
 
 def _write_pdf_report(report: dict[str, Any], pdf_path: Path) -> None:
     """Generate a professionally designed PDF report."""
-    pdf = CheckmatePDF(report["scan_id"], report["target"])
+    branding = report.get("_branding")
+    if not isinstance(branding, ReportBranding):
+        branding = resolve_report_branding(report.get("org_id"))
+    pdf = CheckmatePDF(report["scan_id"], report["target"], branding=branding)
     pdf.set_margins(SPACING.MARGIN_LEFT, SPACING.MARGIN_TOP, SPACING.MARGIN_RIGHT)
     pdf.set_auto_page_break(auto=True, margin=SPACING.MARGIN_BOTTOM)
 
@@ -973,9 +1292,10 @@ def _write_pdf_report(report: dict[str, Any], pdf_path: Path) -> None:
     pdf.rect(0, 0, 210, 80, style="F")
 
     # Logo centered
-    if _LOGO_PATH.is_file():
+    logo = branding.logo_path
+    if logo is not None and logo.is_file():
         logo_x = (210 - SPACING.COVER_LOGO_SIZE) / 2
-        pdf.image(str(_LOGO_PATH), x=logo_x, y=15, h=SPACING.COVER_LOGO_SIZE)
+        pdf.image(str(logo), x=logo_x, y=15, h=SPACING.COVER_LOGO_SIZE)
 
     # Title
     pdf.set_font(TYPOGRAPHY.FONT_SANS, "B", TYPOGRAPHY.SIZE_TITLE)
@@ -987,7 +1307,7 @@ def _write_pdf_report(report: dict[str, Any], pdf_path: Path) -> None:
     pdf.set_font(TYPOGRAPHY.FONT_SANS, "", TYPOGRAPHY.SIZE_BODY)
     pdf.set_text_color(*COLORS.FG_MUTED)
     pdf.set_xy(SPACING.MARGIN_LEFT, 66)
-    pdf.cell(content_width, 6, "Checkmate Vulnerability Assessment", align="C")
+    pdf.cell(content_width, 6, _pdf_safe_text(branding.tagline), align="C")
 
     # Metadata section
     y = 90
@@ -1231,6 +1551,10 @@ def _write_pdf_report(report: dict[str, Any], pdf_path: Path) -> None:
             ),
         )
 
+    # Mandatory coverage & limitations (before findings — always present).
+    y = pdf.get_y() + 6
+    y = _draw_coverage_pdf(pdf, report, y)
+
     # =========================================================================
     # FINDINGS BY SEVERITY
     # =========================================================================
@@ -1357,9 +1681,21 @@ def _config_snippets_markdown(snippets: dict[str, str]) -> list[str]:
     return lines
 
 
+def _md_escape(value: Any) -> str:
+    """Escape attacker-controlled text before embedding in Markdown reports."""
+    text = str(value)
+    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    text = text.replace("`", "\\`")
+    text = text.replace("[", "\\[").replace("]", "\\]")
+    return text
+
+
 def _build_markdown_report(report: dict[str, Any]) -> str:
     lines: list[str] = []
-    lines.append(f"# Checkmate Report - {report['scan_id']}")
+    branding = report.get("_branding")
+    if not isinstance(branding, ReportBranding):
+        branding = resolve_report_branding(report.get("org_id"))
+    lines.append(f"# {_md_escape(branding.brand_name)} Report - {_md_escape(report['scan_id'])}")
     lines.append("")
 
     ai = _ai_synthesis_block(report)
@@ -1369,10 +1705,10 @@ def _build_markdown_report(report: dict[str, Any]) -> str:
         lines.append("")
         lines.append("> *AI-Generated*")
         lines.append("")
-        lines.append(exec_ai.get("summary_text", ""))
+        lines.append(_md_escape(exec_ai.get("summary_text", "")))
         lines.append("")
         if exec_ai.get("business_impact_one_liner"):
-            lines.append(f"**Business impact:** {exec_ai['business_impact_one_liner']}")
+            lines.append(f"**Business impact:** {_md_escape(exec_ai['business_impact_one_liner'])}")
             lines.append("")
         if exec_ai.get("top_risk_finding_id"):
             lines.append(f"**Top risk finding:** `{exec_ai['top_risk_finding_id']}`")
@@ -1389,7 +1725,7 @@ def _build_markdown_report(report: dict[str, Any]) -> str:
         for idx, item in enumerate(ai["remediation_roadmap"], start=1):
             ids = ", ".join(f"`{fid}`" for fid in item.get("finding_ids") or [])
             effort = item.get("estimated_effort", "moderate")
-            lines.append(f"{idx}. **{effort}** — {item.get('rationale', '')}")
+            lines.append(f"{idx}. **{_md_escape(effort)}** — {_md_escape(item.get('rationale', ''))}")
             if ids:
                 lines.append(f"   - Findings: {ids}")
         lines.append("")
@@ -1408,15 +1744,15 @@ def _build_markdown_report(report: dict[str, Any]) -> str:
         lines.append("**What to tackle first:**")
         lines.append("")
         for item in exec_summary["priorities"]:
-            lines.append(f"1. _{item['severity'].upper()}_ — **{item['title']}**")
+            lines.append(f"1. _{item['severity'].upper()}_ — **{_md_escape(item['title'])}**")
             if item["action"]:
-                lines.append(f"   - Fix: {item['action']}")
+                lines.append(f"   - Fix: {_md_escape(item['action'])}")
         lines.append("")
     if exec_summary["notes"]:
         lines.append("> **Good to know:**")
         lines.append(">")
         for note in exec_summary["notes"]:
-            lines.append(f"> - {note}")
+            lines.append(f"> - {_md_escape(note)}")
         lines.append("")
 
     # Truncation notice
@@ -1428,10 +1764,10 @@ def _build_markdown_report(report: dict[str, Any]) -> str:
 
     lines.append("## Scan Details")
     lines.append("")
-    lines.append(f"- **Target:** `{report['target']}`")
-    lines.append(f"- **Scan ID:** `{report['scan_id']}`")
-    lines.append(f"- **Status:** `{report['status']}`")
-    lines.append(f"- **Generated At:** `{report['generated_at']}`")
+    lines.append(f"- **Target:** `{_md_escape(report['target'])}`")
+    lines.append(f"- **Scan ID:** `{_md_escape(report['scan_id'])}`")
+    lines.append(f"- **Status:** `{_md_escape(report['status'])}`")
+    lines.append(f"- **Generated At:** `{_md_escape(report['generated_at'])}`")
     lines.append(f"- **Total Findings:** `{report['findings_count']}`")
     lines.append(f"- **Overall Risk Score (0-10):** `{report['severity_scores'].get('overall_risk_score', 0.0)}`")
     likely_fp = report["severity_scores"].get("likely_false_positives")
@@ -1446,10 +1782,12 @@ def _build_markdown_report(report: dict[str, Any]) -> str:
                 f"({coverage.get('ai_synthesis_provider_role', 'none')})"
             )
     if report.get("summary"):
-        lines.append(f"- **Summary:** {report['summary']}")
+        lines.append(f"- **Summary:** {_md_escape(report['summary'])}")
     if report.get("outcome"):
-        lines.append(f"- **Outcome:** `{report['outcome']}`")
+        lines.append(f"- **Outcome:** `{_md_escape(report['outcome'])}`")
     lines.append("")
+
+    lines.extend(_coverage_markdown(report))
 
     counts = report["severity_scores"].get("severity_counts", {})
     lines.append("## Severity Summary")
@@ -1483,9 +1821,11 @@ def _build_markdown_report(report: dict[str, Any]) -> str:
             instance_note = ""
             if finding.get("is_collapsed") and finding.get("instance_count", 1) > 1:
                 instance_note = f" [{finding['instance_count']} instances]"
-            lines.append(f"#### {plain['title']}{fp_note}{instance_note}")
+            lines.append(f"#### {_md_escape(plain['title'])}{fp_note}{instance_note}")
             lines.append("")
-            lines.append(f"- **In plain English:** {plain['what']} {plain['why']}")
+            lines.append(
+                f"- **In plain English:** {_md_escape(plain['what'])} {_md_escape(plain['why'])}"
+            )
 
             # Handle single vs collapsed URLs
             if finding.get("is_collapsed") and finding.get("affected_urls"):
@@ -1493,15 +1833,15 @@ def _build_markdown_report(report: dict[str, Any]) -> str:
                 url_count = len(urls)
                 lines.append(f"- **Found on {url_count} pages:**")
                 for url in urls[:8]:
-                    lines.append(f"  - `{url}`")
+                    lines.append(f"  - `{_md_escape(url)}`")
                 if url_count > 8:
                     lines.append(f"  - ...and {url_count - 8} more URLs")
                 if finding.get("url_evidence"):
                     lines.append("  - *(Evidence varies per URL - see JSON report)*")
             else:
-                lines.append(f"- **Where:** `{finding.get('url', 'n/a')}`")
+                lines.append(f"- **Where:** `{_md_escape(finding.get('url', 'n/a'))}`")
 
-            lines.append(f"- **How to fix it:** {finding['remediation']}")
+            lines.append(f"- **How to fix it:** {_md_escape(finding['remediation'])}")
             lines.append(f"- **Confidence:** {_verification_plain(finding)}")
             snippets = finding.get("config_snippets")
             if isinstance(snippets, dict) and snippets:
@@ -1518,10 +1858,10 @@ def _build_markdown_report(report: dict[str, Any]) -> str:
             )
             if finding.get("cwe_id") not in (None, "", -1):
                 lines.append(f"  - CWE: `{finding.get('cwe_id')}`")
-            lines.append(f"  - Description: {finding.get('description', 'No description provided')}")
+            lines.append(f"  - Description: {_md_escape(finding.get('description', 'No description provided'))}")
             # Only show evidence if not varying per URL
             if finding.get("evidence") and not finding.get("url_evidence"):
-                lines.append(f"  - Evidence: {finding['evidence']}")
+                lines.append(f"  - Evidence: {_md_escape(finding['evidence'])}")
             verification = finding.get("verification") or {}
             v_status = verification.get("status")
             if v_status:
@@ -1529,9 +1869,9 @@ def _build_markdown_report(report: dict[str, Any]) -> str:
                     f"  - Verification: {v_status} (confidence: {finding.get('confidence', 1.0)})"
                 )
                 if verification.get("reason"):
-                    lines.append(f"  - Verification note: {verification['reason']}")
+                    lines.append(f"  - Verification note: {_md_escape(verification['reason'])}")
                 if verification.get("evidence"):
-                    lines.append(f"  - Verified evidence: {verification['evidence']}")
+                    lines.append(f"  - Verified evidence: {_md_escape(verification['evidence'])}")
             lines.append("")
             lines.append("</details>")
             lines.append("")
@@ -1541,9 +1881,12 @@ def _build_markdown_report(report: dict[str, Any]) -> str:
 
 def _build_html_report(report: dict[str, Any]) -> str:
     counts = report["severity_scores"].get("severity_counts", {})
-    logo_uri = _logo_data_uri()
+    branding = report.get("_branding")
+    if not isinstance(branding, ReportBranding):
+        branding = resolve_report_branding(report.get("org_id"))
+    logo_uri = _logo_data_uri(branding.logo_path)
     logo_markup = (
-        f'<img src="{logo_uri}" alt="Checkmate" class="logo" />'
+        f'<img src="{logo_uri}" alt="{html.escape(branding.brand_name)}" class="logo" />'
         if logo_uri
         else ""
     )
@@ -1792,7 +2135,7 @@ def _build_html_report(report: dict[str, Any]) -> str:
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Checkmate Report - {html.escape(report["scan_id"][:12])}</title>
+  <title>{html.escape(branding.brand_name)} Report - {html.escape(report["scan_id"][:12])}</title>
   <style>
     :root {{
       --bg-dark: #0a0d0b;
@@ -2022,8 +2365,8 @@ def _build_html_report(report: dict[str, Any]) -> str:
   <header class="brand">
     {logo_markup}
     <div>
-      <h1>Checkmate Report</h1>
-      <p class="tagline">Security vulnerability assessment</p>
+      <h1>{esc(branding.brand_name)} Report</h1>
+      <p class="tagline">{esc(branding.tagline)}</p>
     </div>
   </header>
 
@@ -2056,6 +2399,8 @@ def _build_html_report(report: dict[str, Any]) -> str:
     <div><strong>AI Copilot:</strong> {esc(ai["status"])}</div>
   </div>
 
+  {_coverage_html(report)}
+
   {"".join(sections)}
 </body>
 </html>
@@ -2066,36 +2411,92 @@ def run_reporting(state: ScanState) -> dict[str, Any]:
     """Assemble final reports and write JSON/MD/HTML artifacts to disk."""
     settings = get_settings()
     all_findings = [dict(f) for f in state.get("findings", [])]
-    rendered_findings, truncation = _truncate_findings(
-        all_findings,
+    # Deduplicate first so truncation cannot hide unique finding types behind
+    # many repeats of the same (type, tool) pair.
+    deduplicated_groups = _deduplicate_findings(all_findings)
+    rendered_groups, group_truncation = _truncate_deduplicated_groups(
+        deduplicated_groups,
+        settings.report_max_findings,
+    )
+    # Expand rendered groups back into per-URL rows for the non-collapsed view,
+    # then apply the same severity-first cap.
+    expanded_from_groups: list[dict[str, Any]] = []
+    for group in rendered_groups:
+        urls = group.get("affected_urls") or [group.get("url") or ""]
+        evidence_by_url = group.get("url_evidence") or {}
+        for url in urls:
+            row = {
+                k: v
+                for k, v in group.items()
+                if k
+                not in {
+                    "affected_urls",
+                    "url_evidence",
+                    "instance_count",
+                    "is_collapsed",
+                    "urls_truncated",
+                }
+            }
+            row["url"] = url
+            if url in evidence_by_url:
+                row["evidence"] = evidence_by_url[url]
+            expanded_from_groups.append(row)
+    rendered_findings, instance_truncation = _truncate_findings(
+        expanded_from_groups,
         settings.report_max_findings,
     )
     # Group findings by severity (original - one entry per finding)
     findings_by_severity = _group_findings_by_severity(rendered_findings)
     # Group findings with deduplication (collapsed by type+tool)
-    findings_by_severity_deduplicated = _group_findings_by_severity_deduplicated(rendered_findings)
+    findings_by_severity_deduplicated = _group_findings_by_severity_from_groups(
+        rendered_groups
+    )
     generated_at = datetime.now(timezone.utc).isoformat()
     summary = _user_summary(state, len(all_findings))
     ai_synthesis = state.get("ai_synthesis") or {}
+    branding = resolve_report_branding(state.get("org_id"))
 
     report = {
         "scan_id": state["scan_id"],
         "target": state["target"],
+        "org_id": state.get("org_id"),
         "status": state.get("status", "unknown"),
         "human_approved": state.get("human_approved", False),
         "findings_count": len(all_findings),
+        "unique_finding_groups": len(deduplicated_groups),
         "severity_scores": state.get("severity_scores", {}),
         "findings_by_severity": findings_by_severity,
         "findings_by_severity_deduplicated": findings_by_severity_deduplicated,
         "generated_at": generated_at,
         "summary": summary,
         "ai_synthesis": ai_synthesis,
+        "branding": {
+            "brand_name": branding.brand_name,
+            "tagline": branding.tagline,
+            "white_label": branding.white_label,
+        },
+        "_branding": branding,
     }
+    report["coverage"] = build_coverage_section(report)
 
     if state.get("error"):
         report["error"] = state["error"]
 
+    truncation: dict[str, Any] = {}
+    if group_truncation:
+        truncation["groups"] = group_truncation
+    if instance_truncation:
+        truncation["instances"] = instance_truncation
     if truncation:
+        truncation["truncated"] = True
+        truncation["total_findings"] = len(all_findings)
+        truncation["rendered_findings"] = sum(
+            len(items) for items in findings_by_severity.values()
+        )
+        truncation["message"] = (
+            (group_truncation or instance_truncation or {}).get("message")
+            or "Report findings were truncated for readability."
+        )
         report["truncation"] = truncation
 
     outcome = state.get("status")
@@ -2127,7 +2528,10 @@ def run_reporting(state: ScanState) -> dict[str, Any]:
     markdown_report = _build_markdown_report(report)
     html_report = _build_html_report(report)
 
-    json_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    # Internal branding object is not JSON-serializable; strip before write.
+    serializable = {k: v for k, v in report.items() if k != "_branding"}
+
+    json_path.write_text(json.dumps(serializable, indent=2), encoding="utf-8")
     md_path.write_text(markdown_report, encoding="utf-8")
     html_path.write_text(html_report, encoding="utf-8")
     _write_pdf_report(report, pdf_path)
@@ -2138,6 +2542,7 @@ def run_reporting(state: ScanState) -> dict[str, Any]:
         "html": str(html_path),
         "pdf": str(pdf_path),
     }
+    report.pop("_branding", None)
 
     final_status = "completed" if outcome != "failed" else "failed"
     return {"report": report, "status": final_status}

@@ -1,0 +1,21 @@
+# Local-development overlay. Publishes ZAP on loopback only so host-side
+# uvicorn can reach it at http://localhost:8080. Never use this overlay in
+# production — it reintroduces a host-facing ZAP port.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# Prefer APP_ENV=development, DODO_ENVIRONMENT=test, and test Dodo/Firebase
+# credentials. REQUIRE_TOOLCHAIN_AT_STARTUP=false when running the API on the
+# host without the full tool chain.
+
+services:
+  backend:
+    environment:
+      - APP_ENV=development
+      - DODO_ENVIRONMENT=test
+      - REQUIRE_TOOLCHAIN_AT_STARTUP=${REQUIRE_TOOLCHAIN_AT_STARTUP:-false}
+
+  zap:
+    # Bind to 127.0.0.1 only — never 0.0.0.0 on the host.
+    ports:
+      - "127.0.0.1:8080:8080"

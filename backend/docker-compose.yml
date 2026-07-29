@@ -1,3 +1,15 @@
+# Production-oriented Compose stack.
+# ZAP is intentionally NOT published to the host — only reachable as http://zap:8080
+# on the Compose network. For local host access (uvicorn on the host talking to
+# ZAP in Docker), also load docker-compose.dev.yml:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# ZAP image pin: digest-pinned for supply-chain reproducibility. Upgrade
+# deliberately after testing (do not switch back to :latest or :stable).
+# Tag kept for readability; digest is authoritative.
+#   https://www.zaproxy.org/docs/desktop/releases/2.17.0/
+# Index digest resolved 2026-07-22 via GHCR for ghcr.io/zaproxy/zaproxy:2.17.0
+
 services:
   backend:
     build:
@@ -8,23 +20,44 @@ services:
     env_file:
       - .env
     environment:
-      - ZAP_API_URL=http://zap:8080
-      - ZAP_API_KEY=${ZAP_API_KEY}
+      - APP_ENV=${APP_ENV:-production}
+      - "ZAP_API_URL=http://zap:8080"
+      - "ZAP_API_KEY=${ZAP_API_KEY:?ZAP_API_KEY must be set}"
       - REQUIRE_TOOLCHAIN_AT_STARTUP=true
       - TOOL_RETRY_ATTEMPTS=3
+      # Keep global concurrency conservative: ZAP is a shared stateful daemon.
+      - SCAN_RATE_LIMIT_MAX_CONCURRENT_GLOBAL=${SCAN_RATE_LIMIT_MAX_CONCURRENT_GLOBAL:-3}
+      - SCAN_RATE_LIMIT_MAX_CONCURRENT_PER_CLIENT=${SCAN_RATE_LIMIT_MAX_CONCURRENT_PER_CLIENT:-1}
+      - ZAP_MAX_CONCURRENT=${ZAP_MAX_CONCURRENT:-1}
     volumes:
       # Placeholder mount for external security tool binaries (nmap, nuclei, etc.)
       - ./tools-bin:/opt/tools:ro
+      # Persistent customer data — survives container recreate/redeploy.
+      - app-data:/app/data
+      - app-reports:/app/reports
     depends_on:
       zap:
         condition: service_healthy
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+        tag: "{{.Name}}"
+    networks:
+      - checkmate
 
   # OWASP ZAP daemon for active scanning.
-  # ZAP runs in daemon mode and exposes its REST API on port 8080.
-  # Active scans require human approval before execution.
+  # Bound to 0.0.0.0 *inside* the container so other Compose services can reach
+  # it, but NOT published to the host (no ports:). API key auth is required.
+  # ZAP's REST API has no TLS — keep this service on a private Docker network
+  # (or VPN/mTLS sidecar) if it ever moves off this Compose network.
   zap:
-    image: ghcr.io/zaproxy/zaproxy:stable
+    image: "ghcr.io/zaproxy/zaproxy:2.17.0@sha256:8d387b1a63e3425beef4846e39719f5af2a787753af2d8b6558c6257d7a577a2"
+    environment:
+      - "ZAP_API_KEY=${ZAP_API_KEY:?ZAP_API_KEY must be set}"
+      - "JAVA_OPTS=${ZAP_JAVA_OPTS:--Xmx1536m}"
     command:
       - zap.sh
       - -daemon
@@ -39,18 +72,51 @@ services:
       - -config
       - api.disablekey=false
       - -config
-      - api.key=${ZAP_API_KEY}
-    ports:
-      - "8080:8080"
+      - "api.key=${ZAP_API_KEY:?ZAP_API_KEY must be set}"
+    # Document internal-only reachability (does not publish a host port).
+    expose:
+      - "8080"
     volumes:
       - zap-data:/home/zap/.ZAP
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/JSON/core/view/version/"]
-      interval: 30s
+      # Must include apikey — api.disablekey=false rejects unauthenticated probes.
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf \"http://127.0.0.1:8080/JSON/core/view/version/?apikey=$${ZAP_API_KEY}\" || exit 1",
+        ]
+      interval: 15s
       timeout: 10s
-      retries: 5
-      start_period: 60s
+      retries: 10
+      start_period: 120s
+    # Auto-recover crashes; operators should alert on restart count / OOM kills
+    # (docker events / compose logs) so silent crash loops are visible.
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          # ZAP alone typically wants ≥2Gi headroom beyond trivial scans.
+          # Host should provide ≥4Gi free for zap + backend (+ DB if co-located).
+          memory: 2g
+          cpus: "2.0"
+        reservations:
+          memory: 1g
+          cpus: "0.5"
+    # Compose v2 without Swarm still honors mem_limit as a fallback on some hosts.
+    mem_limit: 2g
+    mem_reservation: 1g
+    cpus: 2.0
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+        tag: "{{.Name}}"
+    networks:
+      - checkmate
+    labels:
+      - "checkmate.component=zap"
+      - "checkmate.alert_on_restart=true"
 
   # Placeholder service for tool binary distribution / updates (not yet implemented).
   tools:
@@ -60,6 +126,16 @@ services:
       - ./tools-bin:/opt/tools
     profiles:
       - tools
+    networks:
+      - checkmate
 
 volumes:
   zap-data:
+  app-data:
+  app-reports:
+
+networks:
+  checkmate:
+    driver: bridge
+    # Internal network: services can talk to each other; no extra host exposure.
+    # Backend still publishes 8000 via its ports: mapping.

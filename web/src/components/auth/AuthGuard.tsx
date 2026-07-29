@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePathname, useRouter } from "@/i18n/navigation";
@@ -12,6 +12,9 @@ import styles from "@/components/auth/auth.module.css";
 
 export const DASHBOARD_PATH = "/dashboard";
 export const SIGNIN_PATH = "/signin";
+
+const useAuthRedirectEffect =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 type Mode = "protected" | "guest";
 
@@ -42,7 +45,7 @@ export function AuthGuard({
     isAuthenticated && (!requireEmailVerified || isVerified);
   const shouldRedirectGuest = isAuthenticated && isVerified;
 
-  useEffect(() => {
+  useAuthRedirectEffect(() => {
     if (isLoading) return;
 
     if (mode === "protected" && !isAuthenticated) {
@@ -112,6 +115,7 @@ export function AuthGuard({
       <div className={styles.verifyPanel} role="status" aria-live="polite">
         <h2 className={styles.verifyTitle}>{t("verifyEmailTitle")}</h2>
         <p className={styles.verifyBody}>{t("verifyEmailBody")}</p>
+        <p className={styles.verifyBody}>{t("checkSpam")}</p>
       </div>
     );
   }

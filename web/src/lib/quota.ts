@@ -1,8 +1,13 @@
 import type { BackendUser, ScanHistoryResponse } from "@/lib/api";
+import { getPlan, type PlanId } from "@/config/plans";
 
 export type QuotaDecision =
   | { allowed: true }
   | { allowed: false; reason: "target_limit" | "scan_limit" };
+
+export type FeatureDecision =
+  | { allowed: true }
+  | { allowed: false; reason: "authenticated_scanning_locked" };
 
 function normalizeTarget(target: string): string {
   const value = target.trim().toLowerCase();
@@ -44,4 +49,16 @@ export function canRunScan(
     return { allowed: false, reason: "scan_limit" };
   }
   return { allowed: true };
+}
+
+export function canUseAuthenticatedScanning(user: BackendUser): FeatureDecision {
+  const planId = user.plan_id as PlanId;
+  try {
+    if (getPlan(planId).authenticatedScanning) {
+      return { allowed: true };
+    }
+  } catch {
+    // Unknown plan id — treat as locked.
+  }
+  return { allowed: false, reason: "authenticated_scanning_locked" };
 }

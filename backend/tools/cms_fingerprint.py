@@ -119,6 +119,7 @@ class CmsFingerprint:
         try:
             async with create_safe_async_client(
                 timeout=settings.header_check_timeout,
+                verify=False,
             ) as client:
                 response = await client.get(base)
                 products = _detect_from_body(response.text or "", response.headers)

@@ -32,13 +32,27 @@ Only list domains and URLs that are in scope for your engagement.
 - `.env.example` contains placeholders only.
 - Settings fields holding secrets use `repr=False` to reduce accidental exposure in logs.
 
+## ZAP deployment
+
+- Production Compose does **not** publish ZAP’s API on a host port. Backend
+  reaches it only as `http://zap:8080` on the private Docker network.
+- `api.disablekey=false` and a required `ZAP_API_KEY` are mandatory in Compose
+  / production. Never ship `api.disablekey=true` outside local `start_zap.ps1`.
+- ZAP’s REST API has no TLS. If ZAP is ever moved off the Compose network,
+  wrap the hop (private network, mTLS sidecar, or SSH tunnel) — do not expose
+  raw HTTP on the public internet.
+- Image pin: `ghcr.io/zaproxy/zaproxy:2.17.0@sha256:8d387b1a63e3425beef4846e39719f5af2a787753af2d8b6558c6257d7a577a2`
+  (digest-pinned for supply-chain reproducibility; upgrade deliberately after
+  testing; do not use `:latest` / `:stable` in production).
+- Post-deploy: `backend/scripts/smoke_zap_deploy.sh` (or `.ps1`).
+
 ## Logging
 
 - Logs are emitted as structured JSON including a per-request `request_id` (also returned as `X-Request-ID`).
 - Do not log secrets, full authorization headers, or raw credentials.
 - Production deployments should ship logs to a restricted, access-controlled sink.
-
-## Extension permissions
+- ZAP container logs use the same `json-file` driver as the backend (`docker compose logs zap`).
+- Distinct scan lifecycle events: `zap_unreachable`, `zap_scan_timeout`, `zap_scan_completed`, `zap_skipped_unavailable`.
 
 The Chrome extension requests minimal permissions:
 

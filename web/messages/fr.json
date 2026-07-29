@@ -84,7 +84,7 @@
       },
       "agencyReports": {
         "title": "Rapports professionnels",
-        "body": "Exports PDF élégants avec findings, recommandations et étapes de remédiation. White-label bientôt disponible."
+        "body": "Exports PDF élégants avec findings, recommandations et étapes de remédiation. Le plan Agence peut white-labeler les rapports avec votre logo et nom."
       }
     }
   },
@@ -126,6 +126,7 @@
     "pdfHtmlReports": "Rapports PDF / HTML / MD",
     "chromeExtension": "Extension Chrome",
     "activeTesting": "Tests actifs (ZAP / sqlmap)",
+    "authenticatedScanning": "Scan authentifié",
     "authorizedTargets": "Cibles autorisées uniquement",
     "whiteLabelReports": "Rapports white-label",
     "multiClientWorkspace": "Espace multi-clients",
@@ -182,7 +183,7 @@
       },
       {
         "q": "Puis-je utiliser checkmate pour mes clients ?",
-        "a": "Oui ! Le plan Agence inclut des fonctionnalités pour gérer plusieurs clients, dont les rapports PDF white-label (bientôt disponibles). Beaucoup d'agences digitales utilisent checkmate pour les évaluations sécurité client."
+        "a": "Oui ! Le plan Agence inclut des fonctionnalités pour gérer plusieurs clients, dont les rapports PDF white-label avec le logo et le nom de votre agence. Beaucoup d'agences digitales utilisent checkmate pour les évaluations sécurité client."
       }
     ]
   },
@@ -225,10 +226,20 @@
     "backToSignIn": "Retour à la connexion",
     "backHome": "Retour à checkmate",
     "checkInbox": "Vérifiez votre boîte mail — nous avons envoyé un lien de confirmation. Vous pourrez vous connecter après vérification.",
+    "checkSpam": "Vous ne le voyez pas ? Vérifiez vos courriers indésirables ou spam.",
     "verifyEmailTitle": "Vérifiez votre e-mail",
     "verifyEmailBody": "Nous avons envoyé un lien de vérification. Ouvrez-le pour débloquer votre tableau de bord.",
     "resetSentTitle": "Vérifiez votre e-mail",
     "resetSent": "Si un compte existe pour cet e-mail, un lien de réinitialisation est en route.",
+    "resetPasswordTitle": "Choisissez un nouveau mot de passe",
+    "resetPasswordSubtitle": "Saisissez un nouveau mot de passe, puis reconnectez-vous.",
+    "resetPasswordSubmit": "Mettre à jour le mot de passe",
+    "resetPasswordSuccessTitle": "Mot de passe mis à jour",
+    "resetPasswordSuccess": "Votre mot de passe a été réinitialisé. Connectez-vous avec le nouveau.",
+    "resetPasswordMissingCode": "Ce lien de réinitialisation est manquant ou invalide. Demandez-en un nouveau depuis la page de connexion.",
+    "resetPasswordInvalidCode": "Ce lien a expiré ou a déjà été utilisé. Demandez-en un nouveau depuis la page de connexion.",
+    "newPassword": "Nouveau mot de passe",
+    "confirmNewPassword": "Confirmer le nouveau mot de passe",
     "checkingSession": "Vérification de la session…",
     "redirecting": "Redirection…",
     "dashboardTitle": "Tableau de bord",
@@ -245,7 +256,10 @@
       "userNotFound": "E-mail ou mot de passe incorrect.",
       "invalidEmail": "Saisissez une adresse e-mail valide.",
       "tooManyRequests": "Trop de tentatives. Veuillez attendre {seconds} secondes avant de réessayer.",
-      "accountExistsWithDifferentCredential": "Cet e-mail est déjà enregistré avec une autre méthode. Connectez-vous avec votre méthode d'origine (e-mail/mot de passe).",
+      "accountExistsWithDifferentCredential": "Cet e-mail est déjà enregistré avec une autre méthode. Utilisez votre méthode d'origine ci-dessous — en général e-mail et mot de passe — plutôt que Google.",
+      "accountExistsUsePassword": "Un compte existe déjà pour {email}. Connectez-vous avec e-mail et mot de passe (pas Google).",
+      "accountExistsUseGoogle": "Un compte existe déjà pour {email}. Continuez avec Google plutôt qu'e-mail/mot de passe.",
+      "accountExistsGeneric": "Un compte existe déjà pour {email} avec une autre méthode. Utilisez votre méthode d'origine pour vous connecter.",
       "popupClosedByUser": "La connexion Google a été annulée.",
       "popupBlocked": "Votre navigateur a bloqué la fenêtre de connexion. Autorisez les pop-ups pour ce site.",
       "networkRequestFailed": "Erreur réseau. Vérifiez votre connexion et réessayez.",
@@ -298,13 +312,22 @@
     "historyError": "Impossible de charger l'historique.",
     "emptyHistory": "Aucun scan pour le moment. Lancez votre premier scan ci-dessus.",
     "liveScan": "Scan en direct",
+    "liveScanPage": {
+      "backDashboard": "Retour au tableau de bord",
+      "loading": "Connexion au scan…",
+      "notFound": "Scan introuvable.",
+      "live": "En direct"
+    },
     "awaitingApproval": "En attente de votre approbation",
     "approvalTitle": "Votre décision est requise",
     "approvalHelp": "Les contrôles passifs sont terminés. Les tests actifs peuvent envoyer des requêtes intrusives au site cible. Autorisez-les uniquement si vous avez l'accord nécessaire.",
+    "approvalCountdown": "Autorisation automatique des outils cochés dans {seconds}s sauf annulation ou refus.",
+    "approvalCancelAuto": "Annuler l'auto-approbation",
     "approveActiveTests": "Autoriser les tests actifs",
     "skipActiveTests": "Ignorer les tests actifs",
     "saving": "Enregistrement…",
     "approvalError": "Impossible d'enregistrer votre décision.",
+    "approvalToolsLabel": "Outils actifs à autoriser",
     "view": "Voir",
     "rescan": "Re-scanner",
     "report": "Rapport de scan",
@@ -335,6 +358,38 @@
       "scan_limit": "La limite mensuelle de scans de votre plan est atteinte.",
       "pricingLink": "Voir les tarifs"
     },
+    "authScan": {
+      "title": "Scan authentifié",
+      "help": "Fournissez optionnellement des identifiants pour crawler et tester les pages derrière authentification.",
+      "lockedBadge": "Pro / Agency",
+      "locked": "Le scan authentifié est disponible avec les plans Pro et Agency.",
+      "loading": "Chargement des sites…",
+      "noSites": "Lancez d'abord un scan pour enregistrer un site, puis configurez les identifiants ici.",
+      "siteLabel": "Site",
+      "configured": "identifiants enregistrés",
+      "testAccountTitle": "Utilisez un compte de test dédié",
+      "testAccountBody": "Fortement recommandé : n'utilisez pas un compte réel ou administrateur. Les tests actifs peuvent soumettre des formulaires et interagir avec les données du compte. Préférez un compte jetable à privilèges limités.",
+      "loginUrl": "URL de la page de connexion",
+      "username": "Nom d'utilisateur / e-mail",
+      "usernamePlaceholder": "test-user@example.com",
+      "password": "Mot de passe",
+      "usernameField": "Nom du champ utilisateur",
+      "passwordField": "Nom du champ mot de passe",
+      "fieldNameHelp": "Attributs HTML name du formulaire (requis par l'auth ZAP form-based), pas des sélecteurs CSS.",
+      "excludedPaths": "Chemins destructifs exclus",
+      "excludedHelp": "Un chemin par ligne. La recon suggère automatiquement des chemins comme /delete-account ; gardez les flux destructifs exclus.",
+      "consent": "Je confirme être autorisé à utiliser ces identifiants spécifiques pour des tests de sécurité, et je comprends que les tests actifs peuvent interagir avec les données de ce compte.",
+      "save": "Enregistrer les identifiants",
+      "remove": "Supprimer les identifiants",
+      "saved": "Identifiants chiffrés et enregistrés.",
+      "removed": "Identifiants supprimés.",
+      "loadError": "Impossible de charger les sites.",
+      "saveError": "Impossible d'enregistrer les identifiants.",
+      "removeError": "Impossible de supprimer les identifiants.",
+      "approvalAs": "Le scan authentifié s'exécutera en tant que : {username}.",
+      "approvalExcluded": "Chemins destructifs exclus : {paths}.",
+      "approvalFallback": "Des identifiants sont enregistrés mais le scan authentifié est désactivé pour ce plan — les tests actifs s'exécuteraient en visiteur non authentifié."
+    },
     "pagination": {
       "label": "Pagination de l'historique",
       "previous": "Précédent",
@@ -350,6 +405,48 @@
       "verification": "Vérification",
       "scoring": "Évaluation",
       "reporting": "Rapport"
+    },
+    "findingsTitle": "Résultats",
+    "findingsEmpty": "Aucun résultat sur ce scan de vulnérabilités.",
+    "findingsError": "Impossible de charger les résultats pour Vérifier le correctif.",
+    "verifyFix": {
+      "action": "Verify Fix",
+      "actionFr": "VÉRIFIER LE CORRECTIF",
+      "checking": "Vérification…",
+      "error": "Impossible de vérifier ce résultat.",
+      "rateLimited": "Vérifier le correctif a déjà été lancé récemment pour ce résultat. Attendez quelques minutes.",
+      "history": "Historique de vérification",
+      "attempts": "{count} tentatives",
+      "results": {
+        "fixed": "Corrigé",
+        "stillPresent": "Toujours présent",
+        "changed": "Modifié"
+      }
+    },
+    "coverage": {
+      "title": "Ce que ce scan a couvert",
+      "limitationsHeading": "Ce que ce scan ne couvre pas",
+      "modulesRun": "Modules exécutés avec succès",
+      "modulesFailed": "Modules en échec",
+      "modulesSkipped": "Modules ignorés",
+      "modulesNotApplicable": "Modules non applicables",
+      "modulesRejected": "Modules actifs refusés",
+      "none": "Aucun",
+      "disclaimer": "Il s'agit d'un scan de vulnérabilités automatisé, pas d'un test d'intrusion manuel. Il ne teste pas la logique métier complexe, ne tente pas d'ingénierie sociale, et la couverture du scan authentifié est limitée au compte et aux chemins que vous avez configurés. Pour une évaluation de sécurité complète, envisagez un test d'intrusion manuel par un prestataire qualifié, en complément de cette surveillance de sécurité continue."
+    },
+    "riskTrend": {
+      "title": "Score de risque dans le temps",
+      "loading": "Chargement de la tendance…",
+      "empty": "Lancez des scans de vulnérabilités pour voir l'évolution du risque de vos sites.",
+      "forTarget": "Site : {target}",
+      "allSites": "Tous les sites surveillés",
+      "singleScan": "Scan unique — la tendance apparaît après un second scan",
+      "scans": "{count} scans",
+      "riskScore": "Score de risque",
+      "findings": "Résultats (échelle)",
+      "criticalHigh": "Critique + élevé",
+      "ariaLabel": "Graphique de tendance du risque, dernier score {score}, {count} scans",
+      "selectSite": "Tendance pour le site"
     }
   },
   "legal": {

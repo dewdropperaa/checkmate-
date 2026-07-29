@@ -1,0 +1,24 @@
+# Cloudflare origin lock — Caddy example
+#
+# Install Origin CA cert/key from Terraform outputs, then adapt paths.
+# Keep uvicorn bound to 127.0.0.1:8000 (or Docker published only on loopback).
+
+api.checkmate.ma {
+	tls /etc/ssl/checkmate/origin.crt /etc/ssl/checkmate/origin.key
+
+	# Prefer a host firewall / cloud security-group allowlist of
+	# https://www.cloudflare.com/ips/ rather than relying on app logic alone.
+
+	# When Authenticated Origin Pulls is enabled:
+	# tls {
+	#     client_auth {
+	#         mode require
+	#         trust_pool file /etc/ssl/checkmate/cloudflare-aop-ca.pem
+	#     }
+	# }
+
+	reverse_proxy 127.0.0.1:8000 {
+		header_up CF-Connecting-IP {http.request.header.CF-Connecting-IP}
+		header_up X-Forwarded-Proto {scheme}
+	}
+}

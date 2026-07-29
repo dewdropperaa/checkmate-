@@ -73,6 +73,7 @@ class ExposedFilesChecker:
 
         async with create_safe_async_client(
             timeout=settings.header_check_timeout,
+            verify=False,
         ) as client:
             for path, finding_type, severity in EXPOSED_PATHS:
                 url = urljoin(base + "/", path.lstrip("/"))

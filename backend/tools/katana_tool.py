@@ -130,6 +130,13 @@ class KatanaTool(BaseSecurityTool):
         if max_pages > 0:
             args.extend(["-max-domain-pages", str(max_pages)])
 
+        # Destructive / user-excluded paths: keep Katana from following them.
+        from core.destructive_actions import katana_exclude_regexes
+
+        exclude_patterns = katana_exclude_regexes(scope.get("excluded_paths") or [])
+        for pattern in exclude_patterns:
+            args.extend(["-ef", pattern])
+
         exit_code, stdout, stderr, timed_out = await run_subprocess_safely(
             binary_path=binary_path,
             args=args,

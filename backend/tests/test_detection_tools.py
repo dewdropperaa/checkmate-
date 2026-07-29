@@ -18,6 +18,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
+import socket
 import pytest
 
 os.environ.setdefault("AUTHORIZED_TARGETS", "authorized.example.com,test.example.com")
@@ -372,6 +373,36 @@ def _mock_header_response(headers: httpx.Headers, cookies: list[str] | None = No
     mock_response.headers = headers
     mock_response.headers.get_list = MagicMock(return_value=cookies or [])
     return mock_response
+
+
+@pytest.mark.asyncio
+async def test_safe_http_transport_blocks_dns_rebinding_before_connect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.ssrf import SSRFError, SSRFValidationTransport
+
+    answers = [
+        [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+        [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", 443))],
+    ]
+    connected: list[str] = []
+
+    def _rebind_getaddrinfo(*_args, **_kwargs):
+        return answers.pop(0)
+
+    class _Inner(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+            connected.append(str(request.url))
+            return httpx.Response(200, request=request, content=b"ok")
+
+    monkeypatch.setattr("core.ssrf.socket.getaddrinfo", _rebind_getaddrinfo)
+    transport = SSRFValidationTransport(inner=_Inner(), verify=False)
+    request = httpx.Request("GET", "https://authorized.example.com/")
+
+    with pytest.raises(SSRFError, match="blocked address"):
+        await transport.handle_async_request(request)
+
+    assert connected == []
 
 
 class TestHeaderChecker:
@@ -842,7 +873,7 @@ class TestDetectionAgent:
         with patch("agents.detection.run_passive_tools") as mock_passive, \
              patch("agents.detection.run_active_tools") as mock_active:
             mock_passive.return_value = ([], {})
-            mock_active.return_value = ([], {})
+            mock_active.return_value = ([], {}, {}, [])
 
             result = await run_detection_async(state)
 
@@ -1043,7 +1074,7 @@ class TestPerToolActiveApproval:
         with patch.object(ZAPTool, "run", AsyncMock()) as mock_zap, \
              patch.object(ZAPTool, "close", return_value=None), \
              patch.object(SQLMapTool, "run_batch", AsyncMock(return_value=mock_sqlmap_result)) as mock_sqlmap:
-            findings, errors = await run_active_tools(state)
+            findings, errors, _auth, _notes = await run_active_tools(state)
 
         mock_zap.assert_not_called()
         mock_sqlmap.assert_called_once()
@@ -1078,7 +1109,7 @@ class TestPerToolActiveApproval:
         with patch.object(ZAPTool, "run", AsyncMock()) as mock_zap, \
              patch.object(ZAPTool, "close", return_value=None), \
              patch.object(SQLMapTool, "run_batch", AsyncMock(side_effect=_capture_run_batch)):
-            findings, errors = await run_active_tools(state)
+            findings, errors, _auth, _notes = await run_active_tools(state)
 
         mock_zap.assert_not_called()
         assert findings == []
@@ -1103,9 +1134,12 @@ class TestPerToolActiveApproval:
         )
 
         with patch.object(ZAPTool, "run", AsyncMock(return_value=mock_zap_result)) as mock_zap, \
+             patch.object(
+                 ZAPTool, "probe_ready", AsyncMock(return_value=(True, None))
+             ), \
              patch.object(ZAPTool, "close", return_value=None), \
              patch.object(SQLMapTool, "run_batch", AsyncMock()) as mock_sqlmap:
-            findings, errors = await run_active_tools(state)
+            findings, errors, _auth, _notes = await run_active_tools(state)
 
         mock_zap.assert_called_once()
         mock_sqlmap.assert_not_called()
@@ -1120,7 +1154,7 @@ class TestPerToolActiveApproval:
 
         with patch(
             "agents.detection.run_active_tools",
-            AsyncMock(return_value=([], {})),
+            AsyncMock(return_value=([], {}, {}, [])),
         ):
             result = await run_active_detection_async(state)
 

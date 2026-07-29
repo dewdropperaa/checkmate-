@@ -28,3 +28,9 @@ class ScanState(TypedDict, total=False):
     rejected_tools: list[str]
     error: dict[str, str]
     detection_metadata: dict[str, Any]
+    # Org / site identifiers for looking up encrypted credentials at use-time.
+    # Never store decrypted username/password here — checkpoints persist this.
+    org_id: str
+    site_id: str
+    # Checkpoint-safe authenticated-scan coverage (hints + exclusions only).
+    auth_scan: dict[str, Any]

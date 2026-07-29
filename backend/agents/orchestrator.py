@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -37,11 +37,24 @@ _CHECKPOINT_DB = Path(__file__).resolve().parent.parent / "data" / "checkpoints.
 _REGISTRY_DB = Path(__file__).resolve().parent.parent / "data" / "scan_registry.json"
 
 
-def _build_initial_state(scan_id: str, target: str) -> ScanState:
+def _build_initial_state(
+    scan_id: str,
+    target: str,
+    *,
+    org_id: str | None = None,
+    site_id: str | None = None,
+) -> ScanState:
+    from core.auth_scan import build_public_auth_meta
+
+    auth_meta = build_public_auth_meta(
+        org_id=org_id,
+        site_id=site_id,
+        target=target,
+    )
     return ScanState(
         scan_id=scan_id,
         target=target,
-        scope={"target": target},
+        scope={"target": target, "excluded_paths": list(auth_meta.excluded_paths)},
         authorized=False,
         recon_results={},
         planned_active_tests=[],
@@ -54,6 +67,9 @@ def _build_initial_state(scan_id: str, target: str) -> ScanState:
         human_approved=False,
         approved_tools=[],
         rejected_tools=[],
+        org_id=org_id or "",
+        site_id=site_id or "",
+        auth_scan=auth_meta.to_state_dict(),
     )
 
 
@@ -132,22 +148,50 @@ def _node_plan_active_tests(state: ScanState) -> dict[str, Any]:
 
 def _node_human_approval_gate(state: ScanState) -> dict[str, Any]:
     planned = list(state.get("planned_active_tests", []))
+    auth_scan = dict(state.get("auth_scan") or {})
+    excluded = list(
+        auth_scan.get("excluded_paths")
+        or (state.get("recon_results") or {}).get("excluded_paths")
+        or []
+    )
     log_node_transition(
         state["scan_id"],
         "human_approval_gate",
         planned_active_tests=planned,
     )
-    decision = interrupt(
-        {
-            "scan_id": state["scan_id"],
-            "target": state["target"],
-            "planned_active_tests": planned,
+    interrupt_payload: dict[str, Any] = {
+        "scan_id": state["scan_id"],
+        "target": state["target"],
+        "planned_active_tests": planned,
+        "message": (
+            "Active/intrusive tests require human approval before execution. "
+            "Approve or reject each tool individually, or approve/reject all."
+        ),
+    }
+    if auth_scan.get("configured") and auth_scan.get("enabled"):
+        interrupt_payload["authenticated_scanning"] = {
+            "enabled": True,
+            "username_hint": auth_scan.get("username_hint"),
+            "excluded_paths": excluded,
             "message": (
-                "Active/intrusive tests require human approval before execution. "
-                "Approve or reject each tool individually, or approve/reject all."
+                f"Authenticated scan will run as: {auth_scan.get('username_hint')}. "
+                f"Excluded destructive paths: {', '.join(excluded) or '(none)'}."
             ),
         }
-    )
+    elif auth_scan.get("configured") and not auth_scan.get("enabled"):
+        interrupt_payload["authenticated_scanning"] = {
+            "enabled": False,
+            "username_hint": auth_scan.get("username_hint"),
+            "excluded_paths": excluded,
+            "fallback_reason": auth_scan.get("fallback_reason"),
+            "warnings": list(auth_scan.get("warnings") or []),
+            "message": (
+                "Credentials are stored but authenticated scanning is disabled "
+                f"({auth_scan.get('fallback_reason') or 'unavailable'}). "
+                "Active tests would run as an unauthenticated visitor."
+            ),
+        }
+    decision = interrupt(interrupt_payload)
     decision = decision if isinstance(decision, dict) else {}
     approved_tools = resolve_approved_tools(
         planned,
@@ -325,6 +369,35 @@ class ScanOrchestrator:
             await self._checkpointer_cm.__aexit__(None, None, None)
             self._checkpointer_cm = None
 
+    async def recover_stale_scans(self) -> list[str]:
+        """Resolve orphaned in-progress scan rows left by a service restart."""
+        from core.accounts import list_stale_active_scans, update_scan_record
+
+        settings = get_settings()
+        cutoff = (
+            datetime.now(timezone.utc)
+            - timedelta(seconds=float(settings.scan_timeout_seconds))
+        ).isoformat()
+        recovered: list[str] = []
+        for record in list_stale_active_scans(older_than_iso=cutoff):
+            self.register_scan(record.id, record.target, owner_id=f"org:{record.org_id}")
+            await self._finalize_failed_scan(
+                record.id,
+                record.target,
+                error_code="service_restart_interrupted",
+                message=(
+                    "The scan was interrupted by a service restart and could not be "
+                    "safely resumed from its last checkpoint."
+                ),
+            )
+            update_scan_record(
+                record.id,
+                status="failed",
+                current_node=record.current_node,
+            )
+            recovered.append(record.id)
+        return recovered
+
     def _ensure_graph(self) -> None:
         if self._graph is None:
             raise RuntimeError("ScanOrchestrator is not initialized; call setup() first")
@@ -417,12 +490,21 @@ class ScanOrchestrator:
         except OSError:
             logger.warning("Failed to persist scan registry", exc_info=True)
 
-    async def start_scan(self, scan_id: str, target: str) -> None:
+    async def start_scan(
+        self,
+        scan_id: str,
+        target: str,
+        *,
+        org_id: str | None = None,
+        site_id: str | None = None,
+    ) -> None:
         """Run the graph asynchronously until completion or human-approval interrupt."""
         self._ensure_graph()
         self.register_scan(scan_id, target)
         config = self._config(scan_id)
-        initial = _build_initial_state(scan_id, target)
+        initial = _build_initial_state(
+            scan_id, target, org_id=org_id, site_id=site_id
+        )
         log_node_transition(scan_id, "graph_start", target=target)
         settings = get_settings()
         try:
@@ -501,8 +583,17 @@ class ScanOrchestrator:
                 "Failed to persist failed scan state for %s", scan_id
             )
 
-    def schedule_scan(self, scan_id: str, target: str) -> asyncio.Task[None]:
-        task = asyncio.create_task(self.start_scan(scan_id, target))
+    def schedule_scan(
+        self,
+        scan_id: str,
+        target: str,
+        *,
+        org_id: str | None = None,
+        site_id: str | None = None,
+    ) -> asyncio.Task[None]:
+        task = asyncio.create_task(
+            self.start_scan(scan_id, target, org_id=org_id, site_id=site_id)
+        )
         self._tasks[scan_id] = task
         return task
 

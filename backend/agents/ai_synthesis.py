@@ -28,7 +28,23 @@ logger = logging.getLogger(__name__)
 
 _ALLOWED_VERDICTS = frozenset({"confirmed", "tool_attested"})
 _EFFORT_VALUES = frozenset({"trivial", "moderate", "significant"})
-_FINDING_ID_RE = re.compile(r"\b(?:finding[_-]?id|id)\b[\"'\\s:=]*([A-Za-z0-9_.:/-]+)", re.I)
+# Structured ("finding_id: X" / "id = X") OR prose ("finding ghost-99" / "finding `x`").
+# Bare "finding <token>" only captures id-shaped tokens (digit or separator).
+_FINDING_ID_RE = re.compile(
+    r"(?:"
+    r"\b(?:finding[_-]?id)\b(?:\s*[:=]\s*|\s+)[\"']?([A-Za-z0-9][A-Za-z0-9_.:/-]*)"
+    r"|"
+    r"\bid\b(?:\s*[:=]\s*|\s+)[\"']?([A-Za-z0-9][A-Za-z0-9_.:/-]*)"
+    r"|"
+    r"\bfinding\b\s*`([A-Za-z0-9][A-Za-z0-9_.:/-]*)`"
+    r"|"
+    r"\bfinding\b\s+("
+    r"[A-Za-z0-9]+(?:[_.:-][A-Za-z0-9]+)+"
+    r"|[A-Za-z]*\d[A-Za-z0-9_.:/-]*"
+    r")"
+    r")",
+    re.I,
+)
 
 # Fallback reasons — each becomes a distinct observable metric/log event.
 FALLBACK_NO_API_KEY = "no_api_key"
@@ -39,6 +55,57 @@ FALLBACK_ID_MISMATCH = "id_mismatch"
 FALLBACK_GRADER = "grader_flag"
 FALLBACK_EMPTY_RESPONSE = "empty_response"
 FALLBACK_CALL_BUDGET = "call_budget_exhausted"
+
+
+def _ids_from_free_text(text: str, known_ids: set[str] | None = None) -> set[str]:
+    """Extract candidate finding ids from free-form prose or string fields."""
+    found: set[str] = set()
+    for match in _FINDING_ID_RE.finditer(text):
+        for group in match.groups():
+            if group:
+                found.add(group)
+    if known_ids:
+        for kid in known_ids:
+            if not kid:
+                continue
+            # Word-boundary match so "f1" does not false-hit inside "f10".
+            if re.search(
+                rf"(?<![A-Za-z0-9_.:/-]){re.escape(kid)}(?![A-Za-z0-9_.:/-])",
+                text,
+            ):
+                found.add(kid)
+    return found
+
+
+def extract_referenced_finding_ids(
+    payload: dict[str, Any] | str,
+    *,
+    known_ids: set[str] | None = None,
+) -> set[str]:
+    """Collect finding ids referenced in structured LLM output (and free text)."""
+    found: set[str] = set()
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                key_l = str(key).lower()
+                if key_l in {"finding_id", "top_risk_finding_id", "id"} and value is not None:
+                    found.add(str(value))
+                if key_l in {"finding_ids", "ids"} and isinstance(value, list):
+                    for item in value:
+                        found.add(str(item))
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+        elif isinstance(node, str):
+            found.update(_ids_from_free_text(node, known_ids))
+
+    if isinstance(payload, str):
+        found.update(_ids_from_free_text(payload, known_ids))
+    else:
+        walk(payload)
+    return found
 
 
 def _log_fallback(
@@ -193,44 +260,6 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     return parsed if isinstance(parsed, dict) else None
-
-
-def extract_referenced_finding_ids(
-    payload: dict[str, Any] | str,
-    *,
-    known_ids: set[str] | None = None,
-) -> set[str]:
-    """Collect finding ids referenced in structured LLM output (and free text)."""
-    found: set[str] = set()
-
-    def walk(node: Any) -> None:
-        if isinstance(node, dict):
-            for key, value in node.items():
-                key_l = str(key).lower()
-                if key_l in {"finding_id", "top_risk_finding_id", "id"} and value is not None:
-                    found.add(str(value))
-                if key_l in {"finding_ids", "ids"} and isinstance(value, list):
-                    for item in value:
-                        found.add(str(item))
-                walk(value)
-        elif isinstance(node, list):
-            for item in node:
-                walk(item)
-        elif isinstance(node, str) and known_ids:
-            for kid in known_ids:
-                if kid and kid in node:
-                    found.add(kid)
-
-    if isinstance(payload, str):
-        if known_ids:
-            for kid in known_ids:
-                if kid and kid in payload:
-                    found.add(kid)
-        for match in _FINDING_ID_RE.finditer(payload):
-            found.add(match.group(1))
-    else:
-        walk(payload)
-    return found
 
 
 def validate_referenced_ids(
@@ -475,13 +504,21 @@ def grade_summary_against_findings(
     *,
     settings: Settings | None = None,
     llm_call: Callable[..., LLMCallResult] | None = None,
+    scan_id: str | None = None,
+    org_id: str | None = None,
 ) -> dict[str, Any]:
     """Ask the LLM grader yes/no whether the summary invents unsupported claims."""
     settings = settings or get_settings()
     eligible = filter_llm_eligible_findings(ensure_finding_ids(findings))
     prompt = _build_grader_prompt(eligible, summary_payload)
     invoker = llm_call or call_with_fallback
-    result = invoker(prompt, settings=settings, temperature=DEFAULT_TEMPERATURE)
+    result = invoker(
+        prompt,
+        settings=settings,
+        temperature=DEFAULT_TEMPERATURE,
+        scan_id=scan_id,
+        org_id=org_id,
+    )
     if result.response is None:
         return {
             "supported": False,
@@ -538,6 +575,7 @@ def run_ai_synthesis(
     """LangGraph node: synthesize AI report content or skip gracefully."""
     settings = settings or get_settings()
     scan_id = str(state.get("scan_id") or "unknown")
+    org_id = str(state.get("org_id") or "") or None
     findings = ensure_finding_ids(list(state.get("findings") or []))
     severity_scores = dict(state.get("severity_scores") or {})
     coverage = dict((severity_scores.get("scan_coverage") or {}))
@@ -670,7 +708,13 @@ def run_ai_synthesis(
         )
 
     prompt = _build_synthesis_prompt(eligible, coverage, overall_risk)
-    call_result = invoker(prompt, settings=settings, temperature=DEFAULT_TEMPERATURE)
+    call_result = invoker(
+        prompt,
+        settings=settings,
+        temperature=DEFAULT_TEMPERATURE,
+        scan_id=scan_id,
+        org_id=org_id,
+    )
     llm_calls += 1
 
     if call_result.response is None:
@@ -755,6 +799,8 @@ def run_ai_synthesis(
             },
             settings=settings,
             llm_call=grade_invoker,
+            scan_id=scan_id,
+            org_id=org_id,
         )
         llm_calls += 1
         if grader.get("error") == "grader_unavailable" or grader.get("unsupported_claims") == ["grader_unavailable"]:

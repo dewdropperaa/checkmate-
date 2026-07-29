@@ -80,6 +80,10 @@ export function AuthForm({ mode }: Props) {
   const [formErrorKey, setFormErrorKey] = useState<AuthMessageKey | null>(
     null,
   );
+  const [accountConflict, setAccountConflict] = useState<{
+    email?: string;
+    suggestedMethod?: string;
+  } | null>(null);
   const [cooldownSeconds, setCooldownSeconds] = useState<number | null>(null);
   const [checkInbox, setCheckInbox] = useState(false);
   const [resetSent, setResetSent] = useState(false);
@@ -104,6 +108,7 @@ export function AuthForm({ mode }: Props) {
     setFieldErrors({});
     setInlineServerError(null);
     setFormErrorKey(null);
+    setAccountConflict(null);
     setCheckInbox(false);
     setResetSent(false);
   }
@@ -112,7 +117,21 @@ export function AuthForm({ mode }: Props) {
     ok: false;
     errorKey: AuthMessageKey;
     cooldownSeconds?: number;
+    conflictEmail?: string;
+    suggestedMethod?: string;
   }) {
+    if (result.errorKey === "accountExistsWithDifferentCredential") {
+      setAccountConflict({
+        email: result.conflictEmail,
+        suggestedMethod: result.suggestedMethod,
+      });
+      setFormErrorKey(null);
+      setInlineServerError(null);
+      if (result.conflictEmail && !email.trim()) {
+        setEmail(result.conflictEmail);
+      }
+      return;
+    }
     const target = FIREBASE_FIELD_MAP[result.errorKey] ?? "form";
     if (target === "form") {
       setFormErrorKey(result.errorKey);
@@ -124,6 +143,20 @@ export function AuthForm({ mode }: Props) {
     if (result.errorKey === "tooManyRequests") {
       setCooldownSeconds(result.cooldownSeconds ?? 60);
     }
+  }
+
+  function accountConflictMessage(): string {
+    const conflictEmail = accountConflict?.email ?? email.trim();
+    if (accountConflict?.suggestedMethod === "password" && conflictEmail) {
+      return te("accountExistsUsePassword", { email: conflictEmail });
+    }
+    if (accountConflict?.suggestedMethod === "google" && conflictEmail) {
+      return te("accountExistsUseGoogle", { email: conflictEmail });
+    }
+    if (conflictEmail) {
+      return te("accountExistsGeneric", { email: conflictEmail });
+    }
+    return te("accountExistsWithDifferentCredential");
   }
 
   function runClientValidation(): boolean {
@@ -227,6 +260,7 @@ export function AuthForm({ mode }: Props) {
         <div className={styles.verifyPanel} role="status" aria-live="polite">
           <h2 className={styles.verifyTitle}>{t("verifyEmailTitle")}</h2>
           <p className={styles.verifyBody}>{t("checkInbox")}</p>
+          <p className={styles.verifyBody}>{t("checkSpam")}</p>
           <p className={styles.switch}>
             <Link href="/signin">{t("goToSignIn")}</Link>
           </p>
@@ -298,6 +332,12 @@ export function AuthForm({ mode }: Props) {
         onClick={onGoogle}
         disabled={disabled}
       />
+
+      {accountConflict ? (
+        <p className={styles.conflictAlert} role="alert" aria-live="assertive">
+          {accountConflictMessage()}
+        </p>
+      ) : null}
 
       <div className={styles.divider}>
         <span>{t("or")}</span>

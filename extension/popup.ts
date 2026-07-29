@@ -1,3 +1,12 @@
+import {
+  initExtensionTheme,
+  isThemePreference,
+  resolveTheme,
+  applyResolvedTheme,
+  writeThemePreference,
+  type ThemePreference,
+} from "./theme";
+
 type ApiResponse<T = unknown> = {
   ok: boolean;
   status: number;
@@ -574,7 +583,9 @@ window.addEventListener("beforeunload", () => {
   clearAutoApproveTimer();
 });
 
-void init().catch((err) => {
-  setScanStatus(`Initialization failed: ${String(err)}`, false);
-  scanBtn.disabled = true;
-});
+void initExtensionTheme()
+  .then(() => init())
+  .catch((err) => {
+    setScanStatus(`Initialization failed: ${String(err)}`, false);
+    scanBtn.disabled = true;
+  });

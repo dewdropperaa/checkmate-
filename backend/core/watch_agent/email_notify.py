@@ -63,6 +63,7 @@ def build_manual_scan_link(*, site_target: str, locale: str = "en") -> str:
 
 def render_watch_email_html(payload: WatchAlertPayload) -> tuple[str, str]:
     """Return (subject, html_body) matching Checkmate brand colors."""
+    settings = get_settings()
     accent = _rgb_hex(COLORS.ACCENT)
     bg = _rgb_hex(COLORS.BG_DARK)
     panel = _rgb_hex(COLORS.PANEL)
@@ -116,6 +117,20 @@ def render_watch_email_html(payload: WatchAlertPayload) -> tuple[str, str]:
                 if prev
                 else ""
             )
+            finding_id = item.get("id") or ""
+            verify_href = dash
+            if payload.scan_id and finding_id:
+                verify_href = (
+                    f"{settings.public_app_url.rstrip('/')}/{payload.locale}"
+                    f"/dashboard/scan/{quote(str(payload.scan_id))}"
+                    f"?finding={quote(str(finding_id))}"
+                )
+            verify_link = (
+                f"<div style='margin-top:8px;'>"
+                f"<a href='{html.escape(verify_href)}' style='color:{accent};"
+                f"font-size:12px;font-weight:600;text-decoration:none;'>"
+                f"Verify Fix in dashboard →</a></div>"
+            )
             rows.append(
                 f"<tr><td style='padding:10px 0;border-bottom:1px solid {border};'>"
                 f"<div style='color:{accent};font-weight:600;'>{ftype}</div>"
@@ -123,7 +138,7 @@ def render_watch_email_html(payload: WatchAlertPayload) -> tuple[str, str]:
                 f"font-size:12px;text-transform:uppercase;margin-top:4px;'>"
                 f"{sev}{badge}</div>"
                 f"<div style='color:{dim};margin-top:4px;font-size:13px;'>{desc}</div>"
-                f"</td></tr>"
+                f"{verify_link}</td></tr>"
             )
 
     body = f"""<!DOCTYPE html>

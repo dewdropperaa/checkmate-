@@ -24,6 +24,7 @@ export type FeatureKey =
   | "pdfHtmlReports"
   | "chromeExtension"
   | "activeTesting"
+  | "authenticatedScanning"
   | "authorizedTargets"
   | "whiteLabelReports"
   | "multiClientWorkspace"
@@ -56,6 +57,11 @@ export interface Plan {
    * Keep in sync with backend/core/plans.py.
    */
   watchCadence: "none" | "weekly" | "daily";
+  /**
+   * Authenticated scanning (login credentials for behind-auth crawl/tests).
+   * Pro and Agency only — keep in sync with backend/core/plans.py.
+   */
+  authenticatedScanning: boolean;
   features: FeatureKey[];
 }
 
@@ -74,9 +80,10 @@ export const FEATURE_CATALOG: Record<
   pdfHtmlReports: { toolHint: "reporting" },
   chromeExtension: { toolHint: "extension" },
   activeTesting: { toolHint: "zap + sqlmap (human approval)" },
+  authenticatedScanning: { toolHint: "ZAP form-based auth context" },
   authorizedTargets: { toolHint: "AUTHORIZED_TARGETS scope" },
-  // Reports currently brand as Checkmate; agency white-label is product roadmap.
-  whiteLabelReports: { toolHint: "reporting", todo: true },
+  // Agency white-label PDF/HTML reports (brand name + logo).
+  whiteLabelReports: { toolHint: "reporting" },
   multiClientWorkspace: { toolHint: "saas accounts", todo: true },
   prioritySupport: { toolHint: "ops", todo: true },
 };
@@ -94,6 +101,7 @@ export const PLANS: Plan[] = [
     maxTargets: 1,
     scansPerMonth: 5,
     watchCadence: "none",
+    authenticatedScanning: false,
     features: [
       "headerChecks",
       "tlsChecks",
@@ -115,6 +123,7 @@ export const PLANS: Plan[] = [
     maxTargets: 3,
     scansPerMonth: 30,
     watchCadence: "weekly",
+    authenticatedScanning: false,
     features: [
       "headerChecks",
       "tlsChecks",
@@ -141,6 +150,7 @@ export const PLANS: Plan[] = [
     maxTargets: 15,
     scansPerMonth: 150,
     watchCadence: "daily",
+    authenticatedScanning: true,
     features: [
       "headerChecks",
       "tlsChecks",
@@ -149,6 +159,7 @@ export const PLANS: Plan[] = [
       "jsDependencyCve",
       "aiExecutiveSummary",
       "activeTesting",
+      "authenticatedScanning",
       "pdfHtmlReports",
       "chromeExtension",
       "authorizedTargets",
@@ -168,6 +179,7 @@ export const PLANS: Plan[] = [
     maxTargets: null,
     scansPerMonth: null,
     watchCadence: "daily",
+    authenticatedScanning: true,
     features: [
       "headerChecks",
       "tlsChecks",
@@ -176,6 +188,7 @@ export const PLANS: Plan[] = [
       "jsDependencyCve",
       "aiExecutiveSummary",
       "activeTesting",
+      "authenticatedScanning",
       "pdfHtmlReports",
       "chromeExtension",
       "authorizedTargets",

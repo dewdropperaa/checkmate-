@@ -188,6 +188,28 @@ class SQLMapTool(BaseSecurityTool):
 
         findings = self._parse_output(stdout, stderr, target)
 
+        if exit_code != 0 and not findings:
+            return ToolResult(
+                tool_name=self.name,
+                target=target,
+                success=False,
+                error=(
+                    f"SQLMap exited with code {exit_code}"
+                    + (f": {stderr.strip()[:500]}" if stderr.strip() else "")
+                ),
+                data={
+                    "findings": [],
+                    "finding_count": 0,
+                    "level": level,
+                    "risk": risk,
+                    "vulnerable": False,
+                },
+                stdout=stdout,
+                stderr=stderr,
+                exit_code=exit_code,
+                timed_out=False,
+            )
+
         return ToolResult(
             tool_name=self.name,
             target=target,
@@ -203,6 +225,11 @@ class SQLMapTool(BaseSecurityTool):
             stderr=stderr,
             exit_code=exit_code,
             timed_out=False,
+            error=(
+                f"SQLMap exited with code {exit_code} but reported findings"
+                if exit_code != 0
+                else None
+            ),
         )
 
     async def run_batch(
@@ -245,15 +272,40 @@ class SQLMapTool(BaseSecurityTool):
 
         all_findings: list[Finding] = []
         vulnerable_urls: list[str] = []
+        child_failures: list[str] = []
+        urls_ok = 0
 
         for url in validated_urls:
             result = await self.run(url, scope)
             if result.success and result.data:
+                urls_ok += 1
                 findings_data = result.data.get("findings", [])
                 for fd in findings_data:
                     all_findings.append(Finding(**fd))
                 if result.data.get("vulnerable"):
                     vulnerable_urls.append(url)
+            else:
+                child_failures.append(
+                    f"{url}: {result.error or f'exit {result.exit_code}'}"
+                )
+
+        if child_failures and urls_ok == 0:
+            return ToolResult(
+                tool_name=self.name,
+                target="batch",
+                success=False,
+                error=(
+                    "SQLMap failed for all URLs: "
+                    + "; ".join(child_failures[:5])
+                ),
+                data={
+                    "findings": [],
+                    "finding_count": 0,
+                    "urls_tested": len(validated_urls),
+                    "vulnerable_urls": [],
+                    "child_failures": child_failures,
+                },
+            )
 
         return ToolResult(
             tool_name=self.name,
@@ -262,9 +314,15 @@ class SQLMapTool(BaseSecurityTool):
             data={
                 "findings": [f.model_dump_for_state() for f in all_findings],
                 "finding_count": len(all_findings),
-                "urls_tested": len(validated_urls),
+                "urls_tested": urls_ok,
                 "vulnerable_urls": vulnerable_urls,
+                "child_failures": child_failures or None,
             },
+            error=(
+                f"SQLMap partial failures: {len(child_failures)} URL(s)"
+                if child_failures
+                else None
+            ),
         )
 
     def _parse_output(

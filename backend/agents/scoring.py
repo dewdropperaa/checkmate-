@@ -166,7 +166,16 @@ def run_scoring(state: ScanState) -> dict[str, Any]:
     )
 
     recon = state.get("recon_results") or {}
-    recon_modules = sorted(recon.get("tool_results", {}).keys())
+    recon_modules = sorted(
+        k
+        for k, v in (recon.get("tool_results") or {}).items()
+        if isinstance(v, dict) and v.get("success") and not v.get("skipped")
+    )
+    recon_skipped = sorted(
+        k
+        for k, v in (recon.get("tool_results") or {}).items()
+        if isinstance(v, dict) and v.get("skipped")
+    )
     detection_meta = state.get("detection_metadata") or {}
     detection_errors = detection_meta.get("errors") or {}
     modules_na = set(detection_meta.get("modules_not_applicable") or [])
@@ -175,8 +184,19 @@ def run_scoring(state: ScanState) -> dict[str, Any]:
         m for m in passive_modules
         if m not in detection_errors and m not in modules_na
     ]
-    if detection_meta.get("active_tools_run"):
-        detection_modules.extend(["zap", "sqlmap"])
+    # Only credit active tools that actually executed — never infer both from a flag.
+    active_executed = list(detection_meta.get("active_tools_executed") or [])
+    if not active_executed and detection_meta.get("active_tools_run"):
+        # Backward-compatible fallback for older checkpoints that only set the flag.
+        approved = list(detection_meta.get("approved_tools") or [])
+        active_executed = [
+            t
+            for t in approved
+            if f"active_{t}" not in detection_errors and t not in modules_na
+        ]
+    for tool in active_executed:
+        if tool not in detection_modules:
+            detection_modules.append(tool)
 
     modules_failed = sorted(
         k for k in detection_errors.keys()
@@ -188,6 +208,11 @@ def run_scoring(state: ScanState) -> dict[str, Any]:
         if k.startswith("active_")
     )
     modules_failed_all = modules_failed + active_failed
+    # Recon hard failures also belong in coverage honesty (not mere skips).
+    for tool, err in (recon.get("errors") or {}).items():
+        if tool not in modules_failed_all and tool not in recon_skipped:
+            modules_failed_all.append(tool)
+    modules_failed_all = sorted(set(modules_failed_all))
 
     total_findings = len(findings)
     if total_findings == 0:
@@ -202,20 +227,50 @@ def run_scoring(state: ScanState) -> dict[str, Any]:
         coverage_penalty = min(2.0, 0.5 * len(modules_failed_all))
         overall_risk = round(max(overall_risk, coverage_penalty), 2)
 
+    rejected_active = list(detection_meta.get("rejected_tools") or [])
     scan_coverage = {
         "recon_modules_run": recon_modules,
         "detection_modules_run": detection_modules,
         "recon_partial_failure": bool(recon.get("partial_failure")),
         "modules_failed": modules_failed_all,
         "modules_not_applicable": sorted(modules_na),
-        # Backward-compatible alias — only real failures, not intentional N/A.
-        "modules_skipped": modules_failed_all,
+        "modules_skipped": sorted(set(recon_skipped + rejected_active)),
+        "modules_rejected": rejected_active,
         "score_basis": (
             "Score reflects findings from modules that executed successfully. "
             "modules_not_applicable lists tools that had nothing to scan; "
-            "modules_failed lists tools that exhausted retries."
+            "modules_failed lists tools that exhausted retries; "
+            "modules_skipped lists intentionally disabled/skipped tools "
+            "(e.g. Firecrawl off, reviewer-rejected active tools)."
         ),
     }
+
+    detection_meta = dict(state.get("detection_metadata") or {})
+    coverage_notes = [
+        str(n) for n in (detection_meta.get("coverage_notes") or []) if n
+    ]
+    if coverage_notes:
+        scan_coverage["coverage_notes"] = coverage_notes
+
+    auth_scan = dict(state.get("auth_scan") or {})
+    if auth_scan:
+        scan_coverage["authenticated_scanning"] = {
+            "configured": bool(auth_scan.get("configured")),
+            "enabled": bool(auth_scan.get("enabled")),
+            "login_succeeded": auth_scan.get("login_succeeded"),
+            "username_hint": auth_scan.get("username_hint"),
+            "excluded_paths": list(auth_scan.get("excluded_paths") or []),
+            "fallback_reason": auth_scan.get("fallback_reason"),
+            "warnings": list(auth_scan.get("warnings") or []),
+        }
+        if (
+            auth_scan.get("configured")
+            and auth_scan.get("enabled")
+            and auth_scan.get("login_succeeded") is False
+        ):
+            scan_coverage["authenticated_scanning"]["coverage_warning"] = (
+                "Login failed; scan proceeded as an unauthenticated visitor."
+            )
 
     return {
         "findings": findings,

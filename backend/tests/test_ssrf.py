@@ -53,6 +53,20 @@ class TestValidateUrl:
         with pytest.raises(SSRFError, match="Malformed"):
             validate_url("http://not_a_valid_host!!!/", resolve_dns=False)
 
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://2852039166/",
+            "http://2130706433/",
+            "http://0x7f000001/",
+            "http://0177.0.0.1/",
+            "http://127.1/",
+        ],
+    )
+    def test_rejects_non_canonical_ip_literals(self, url: str) -> None:
+        with pytest.raises(SSRFError, match="blocked"):
+            validate_url(url, resolve_dns=False)
+
     def test_rejects_domain_resolving_to_private_ip(self) -> None:
         fake_results = [
             (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.50.1", 0)),

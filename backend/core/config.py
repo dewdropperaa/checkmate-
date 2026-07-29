@@ -218,15 +218,28 @@ class Settings(BaseSettings):
         default=2_000_000,
         description="Maximum response body bytes to inspect during verification",
     )
+    verify_fix_cooldown_seconds: int = Field(
+        default=180,
+        ge=30,
+        le=3600,
+        description=(
+            "Minimum seconds between Verify Fix re-checks for the same finding "
+            "(prevents using Verify Fix as an unthrottled scanning primitive)"
+        ),
+    )
 
     # OWASP ZAP settings
     zap_api_url: str = Field(
         default="http://zap:8080",
-        description="ZAP REST API URL",
+        description=(
+            "ZAP REST API URL. Prefer the Compose service name "
+            "(http://zap:8080) on the private Docker network. ZAP has no "
+            "built-in TLS — do not point this at a public hostname over plain HTTP."
+        ),
     )
     zap_api_key: str = Field(
         default="",
-        description="ZAP API key for authentication",
+        description="ZAP API key for authentication (required in production)",
     )
     zap_timeout: float = Field(
         default=600.0,
@@ -235,6 +248,33 @@ class Settings(BaseSettings):
     zap_poll_interval: float = Field(
         default=5.0,
         description="Interval for polling ZAP scan status",
+    )
+    zap_max_concurrent: int = Field(
+        default=1,
+        ge=1,
+        le=4,
+        description=(
+            "Maximum concurrent ZAP active scans against the shared daemon. "
+            "Keep at 1 unless the host has substantial RAM headroom — ZAP is "
+            "stateful and memory-heavy; parallel scans risk OOM and session races."
+        ),
+    )
+
+    # Envelope encryption master key for site auth credentials (Fernet).
+    # Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    credentials_master_key: str | None = Field(
+        default=None,
+        repr=False,
+        description="Fernet master key for envelope-encrypting site credentials",
+    )
+
+    # Destructive-action form keyword blocklist (comma-separated override).
+    destructive_form_keywords: str = Field(
+        default="",
+        description=(
+            "Optional comma-separated override for destructive form keywords. "
+            "Empty = use built-in defaults from core.destructive_actions."
+        ),
     )
 
     # SQLMap settings
@@ -261,12 +301,30 @@ class Settings(BaseSettings):
         description="Maximum /scan requests per client in each window",
     )
     scan_rate_limit_max_concurrent_per_client: int = Field(
-        default=2,
-        description="Maximum concurrently running scans per client identity",
+        default=1,
+        description=(
+            "Maximum concurrently running scans per client identity. "
+            "Keep low while active scans share a single ZAP daemon."
+        ),
     )
     scan_rate_limit_max_concurrent_global: int = Field(
+        default=3,
+        description=(
+            "Maximum concurrently running scans across all clients. "
+            "Conservative default — ZAP memory scales poorly with parallel active scans."
+        ),
+    )
+    auth_rate_limit_window_seconds: int = Field(
+        default=60,
+        description="Sliding window in seconds for auth/session endpoints",
+    )
+    auth_rate_limit_max_requests_per_ip: int = Field(
         default=20,
-        description="Maximum concurrently running scans across all clients",
+        description="Maximum auth/session requests per client IP in each window",
+    )
+    auth_rate_limit_max_requests_per_account: int = Field(
+        default=10,
+        description="Maximum auth/session requests per Firebase account in each window",
     )
     scan_timeout_seconds: float = Field(
         default=1800.0,
@@ -321,9 +379,45 @@ class Settings(BaseSettings):
         repr=False,
         description="Shared secret for Dodo Payments plan-change webhooks",
     )
+    dodo_environment: str = Field(
+        default="test",
+        description=(
+            "Dodo Payments mode: test (sandbox) or live (production billing). "
+            "Must match the DODO_API_KEY prefix (dodo_test_ / dodo_live_)."
+        ),
+    )
+    dodo_api_key: str | None = Field(
+        default=None,
+        repr=False,
+        description="Dodo Payments API key (dodo_test_* or dodo_live_*)",
+    )
+    dodo_api_url: str = Field(
+        default="https://api.dodopayments.com",
+        description="Dodo Payments API base URL used by health probes",
+    )
+    upstream_health_timeout_seconds: float = Field(
+        default=3.0,
+        description="Timeout for lightweight upstream dependency health checks",
+    )
+    production_firebase_project_id: str | None = Field(
+        default=None,
+        description=(
+            "Production Firebase project ID. Dev/staging must not point at this "
+            "project — set in deploy configs to enforce isolation."
+        ),
+    )
     watch_scheduler_enabled: bool = Field(
         default=True,
         description="Start the APScheduler Watch Agent on API startup",
+    )
+
+    # Comma-separated founder/creator emails — always receive agency-tier access.
+    creator_emails: str = Field(
+        default="",
+        description=(
+            "Comma-separated emails that receive agency plan limits and features "
+            "(unlimited targets/scans, authenticated scanning, white-label reports)"
+        ),
     )
 
     # Tool reliability
@@ -358,11 +452,40 @@ class Settings(BaseSettings):
             )
         return normalized
 
+    @field_validator("dodo_environment")
+    @classmethod
+    def _normalize_dodo_environment(cls, value: str) -> str:
+        normalized = (value or "test").strip().lower().replace("-", "_")
+        aliases = {
+            "test": "test",
+            "test_mode": "test",
+            "sandbox": "test",
+            "live": "live",
+            "live_mode": "live",
+            "production": "live",
+        }
+        if normalized not in aliases:
+            raise ValueError(
+                "dodo_environment must be 'test' or 'live' "
+                f"(aliases: test_mode, live_mode), got '{value}'"
+            )
+        return aliases[normalized]
+
     @property
     def authorized_target_list(self) -> list[str]:
         if not self.authorized_targets.strip():
             return []
         return [t.strip() for t in self.authorized_targets.split(",") if t.strip()]
+
+    @property
+    def creator_email_list(self) -> list[str]:
+        if not self.creator_emails.strip():
+            return []
+        return [
+            e.strip().lower()
+            for e in self.creator_emails.split(",")
+            if e.strip()
+        ]
 
     @property
     def ai_llm_provider_list(self) -> list[str]:
@@ -381,35 +504,146 @@ def get_settings() -> Settings:
     return Settings()
 
 
+def _dodo_key_mode(api_key: str | None) -> str | None:
+    if not api_key:
+        return None
+    if api_key.startswith("dodo_live_"):
+        return "live"
+    if api_key.startswith("dodo_test_"):
+        return "test"
+    return None
+
+
 def validate_startup_settings(settings: Settings | None = None) -> None:
-    """Fail fast when production is misconfigured.
+    """Fail fast when runtime settings are missing or environment-inconsistent.
 
     Raises ValueError with a clear message so the process exits at startup
     rather than failing confusingly on the first paid API call.
     """
     settings = settings or get_settings()
-    if settings.app_env != "production":
-        return
+    errors: list[str] = []
 
-    missing: list[str] = []
-    if settings.firecrawl_enabled and not settings.firecrawl_api_key:
-        missing.append("FIRECRAWL_API_KEY (required when FIRECRAWL_ENABLED=true)")
-    if not settings.zap_api_key:
-        missing.append("ZAP_API_KEY")
+    if settings.app_env == "production":
+        if settings.debug:
+            errors.append(
+                "DEBUG=true is not allowed when APP_ENV=production "
+                "(refusing to run production with dev diagnostics enabled)"
+            )
+        if settings.dodo_environment != "live":
+            errors.append(
+                "DODO_ENVIRONMENT=live is required when APP_ENV=production "
+                f"(got {settings.dodo_environment!r})"
+            )
+        if not settings.dodo_api_key:
+            errors.append(
+                "DODO_API_KEY (live Dodo Payments key — dodo_live_*)"
+            )
+        elif _dodo_key_mode(settings.dodo_api_key) != "live":
+            errors.append(
+                "DODO_API_KEY must be a live key (dodo_live_*) when "
+                "APP_ENV=production"
+            )
+        if settings.firecrawl_enabled and not settings.firecrawl_api_key:
+            errors.append(
+                "FIRECRAWL_API_KEY (required when FIRECRAWL_ENABLED=true)"
+            )
+        if not settings.zap_api_key:
+            errors.append("ZAP_API_KEY")
+        if not settings.firebase_project_id:
+            errors.append("FIREBASE_PROJECT_ID")
+        if not (
+            settings.firebase_credentials_json
+            or settings.firebase_credentials_path
+        ):
+            errors.append(
+                "FIREBASE_CREDENTIALS_JSON or FIREBASE_CREDENTIALS_PATH "
+                "(Firebase Admin service account — never a client web API key)"
+            )
+        if not settings.require_firebase_auth:
+            errors.append(
+                "REQUIRE_FIREBASE_AUTH=true "
+                "(scan routes must not accept anonymous/legacy-only traffic in production)"
+            )
+        if not settings.dodo_webhook_secret:
+            errors.append(
+                "DODO_WEBHOOK_SECRET "
+                "(unsigned billing webhooks must not be accepted in production)"
+            )
+        if not settings.credentials_master_key:
+            errors.append(
+                "CREDENTIALS_MASTER_KEY "
+                "(required to encrypt authenticated-scan credentials at rest)"
+            )
+        if (
+            settings.production_firebase_project_id
+            and settings.firebase_project_id
+            and settings.firebase_project_id
+            != settings.production_firebase_project_id
+        ):
+            errors.append(
+                "FIREBASE_PROJECT_ID must match PRODUCTION_FIREBASE_PROJECT_ID "
+                "when APP_ENV=production"
+            )
 
-    if not settings.firebase_project_id:
-        missing.append("FIREBASE_PROJECT_ID")
-    if not (
-        settings.firebase_credentials_json
-        or settings.firebase_credentials_path
-    ):
-        missing.append(
-            "FIREBASE_CREDENTIALS_JSON or FIREBASE_CREDENTIALS_PATH "
-            "(Firebase Admin service account — never a client web API key)"
+    elif settings.app_env == "staging":
+        if settings.debug:
+            errors.append(
+                "DEBUG=true is not allowed when APP_ENV=staging"
+            )
+        if settings.dodo_environment != "test":
+            errors.append(
+                "DODO_ENVIRONMENT=test is required when APP_ENV=staging "
+                f"(got {settings.dodo_environment!r})"
+            )
+        if settings.dodo_api_key and _dodo_key_mode(settings.dodo_api_key) != "test":
+            errors.append(
+                "DODO_API_KEY must be a test key (dodo_test_*) when APP_ENV=staging"
+            )
+        if not settings.dodo_webhook_secret:
+            errors.append("DODO_WEBHOOK_SECRET")
+        if not settings.credentials_master_key:
+            errors.append("CREDENTIALS_MASTER_KEY")
+
+    # Non-production environments must never reach live billing or prod Firebase.
+    if settings.app_env in {"development", "test", "staging"}:
+        if settings.dodo_environment == "live":
+            errors.append(
+                f"DODO_ENVIRONMENT=live is not allowed when APP_ENV={settings.app_env}"
+            )
+        key_mode = _dodo_key_mode(settings.dodo_api_key)
+        if key_mode == "live":
+            errors.append(
+                "DODO_API_KEY is a live key (dodo_live_*) — use a test key "
+                f"when APP_ENV={settings.app_env}"
+            )
+        if (
+            settings.production_firebase_project_id
+            and settings.firebase_project_id
+            and settings.firebase_project_id
+            == settings.production_firebase_project_id
+        ):
+            errors.append(
+                "FIREBASE_PROJECT_ID matches PRODUCTION_FIREBASE_PROJECT_ID — "
+                f"dev/staging must use a separate Firebase project (APP_ENV={settings.app_env})"
+            )
+
+    # DODO_ENVIRONMENT must agree with the API key prefix when a key is set.
+    if settings.dodo_api_key:
+        key_mode = _dodo_key_mode(settings.dodo_api_key)
+        if key_mode is None:
+            errors.append(
+                "DODO_API_KEY must start with dodo_test_ or dodo_live_"
+            )
+        elif key_mode != settings.dodo_environment:
+            errors.append(
+                f"DODO_ENVIRONMENT={settings.dodo_environment!r} does not match "
+                f"DODO_API_KEY mode ({key_mode!r})"
+            )
+
+    if errors:
+        label = (
+            "Production startup validation failed"
+            if settings.app_env == "production"
+            else f"Startup validation failed for APP_ENV={settings.app_env}"
         )
-
-    if missing:
-        raise ValueError(
-            "Production startup validation failed. Missing required settings: "
-            + "; ".join(missing)
-        )
+        raise ValueError(f"{label}. Issues: " + "; ".join(errors))

@@ -168,6 +168,30 @@ async def require_firebase_user(
     return verify_id_token(creds.credentials)
 
 
+def ensure_email_verified(user: AuthenticatedUser) -> None:
+    """Reject sensitive actions until the Firebase email_verified claim is true."""
+    if user.email_verified:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "error": "email_not_verified",
+            "message": (
+                "Verify your email address before using this feature. "
+                "Check your inbox (and spam folder) for the verification link."
+            ),
+        },
+    )
+
+
+async def require_verified_firebase_user(
+    user: AuthenticatedUser = Depends(require_firebase_user),
+) -> AuthenticatedUser:
+    """FastAPI dependency: valid Firebase token with a verified email address."""
+    ensure_email_verified(user)
+    return user
+
+
 def try_verify_bearer_token(token: str) -> AuthenticatedUser | None:
     """Best-effort verify for hybrid identity (Firebase JWT vs opaque API keys).
 

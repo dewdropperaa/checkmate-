@@ -1,9 +1,21 @@
+import {
+  applyResolvedTheme,
+  initExtensionTheme,
+  isThemePreference,
+  resolveTheme,
+  writeThemePreference,
+  type ThemePreference,
+} from "./theme";
+
 type ApiResponse<T = unknown> = {
   ok: boolean;
   status: number;
   data: T;
 };
 
+const themePreferenceSelect = document.getElementById(
+  "theme-preference",
+) as HTMLSelectElement;
 const backendUrlInput = document.getElementById("backend-url") as HTMLInputElement;
 const webAppUrlInput = document.getElementById("webapp-url") as HTMLInputElement;
 const authTokenInput = document.getElementById("auth-token") as HTMLInputElement;
@@ -264,6 +276,15 @@ newTargetInput.addEventListener("keydown", (event) => {
   }
 });
 
+themePreferenceSelect.addEventListener("change", () => {
+  const value = themePreferenceSelect.value;
+  if (!isThemePreference(value)) return;
+  const preference: ThemePreference = value;
+  void writeThemePreference(preference).then(() => {
+    applyResolvedTheme(resolveTheme(preference));
+  });
+});
+
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local" || !changes.authToken) {
     return;
@@ -279,6 +300,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 void (async () => {
   try {
+    const preference = await initExtensionTheme();
+    themePreferenceSelect.value = preference;
     const connected = await loadSettings();
     if (connected) {
       await loadTargets();

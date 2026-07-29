@@ -60,8 +60,26 @@ async def run_recon_async(state: ScanState) -> dict[str, Any]:
     Returns:
         Dict with recon_results to merge into ScanState
     """
+    from core.auth_scan import build_public_auth_meta
+    from core.destructive_actions import (
+        detect_destructive_paths,
+        filter_excluded_endpoints,
+        filter_excluded_urls,
+        merge_excluded_paths,
+    )
+
     target = state["target"]
-    scope = state.get("scope", {})
+    scope = dict(state.get("scope") or {})
+    org_id = state.get("org_id")
+    site_id = state.get("site_id")
+
+    auth_meta = build_public_auth_meta(
+        org_id=org_id,
+        site_id=site_id,
+        target=target,
+    )
+    excluded = list(auth_meta.excluded_paths)
+    scope["excluded_paths"] = excluded
 
     logger.info(f"Starting reconnaissance for target: {target}")
 
@@ -111,7 +129,13 @@ async def run_recon_async(state: ScanState) -> dict[str, Any]:
             "timed_out": result.timed_out,
             "exit_code": result.exit_code,
             "error": result.error,
+            "skipped": bool((result.data or {}).get("skipped")),
+            "skip_reason": (result.data or {}).get("skip_reason"),
         }
+
+        if (result.data or {}).get("skipped"):
+            # Intentional skip (e.g. Firecrawl disabled) — not a failure.
+            continue
 
         if not result.success:
             recon_results["errors"][tool_name] = result.error or "Tool reported failure"
@@ -176,6 +200,19 @@ async def run_recon_async(state: ScanState) -> dict[str, Any]:
     recon_results["js_files"] = _dedupe_preserve_order(recon_results["js_files"])
     recon_results["endpoints"] = _dedupe_endpoints(recon_results["endpoints"])
 
+    # Auto-detect destructive paths from discovered URLs and default-exclude them.
+    discovered_destructive = detect_destructive_paths(recon_results["urls"])
+    excluded = merge_excluded_paths(excluded, discovered_destructive)
+    recon_results["urls"] = filter_excluded_urls(recon_results["urls"], excluded)
+    recon_results["js_files"] = filter_excluded_urls(recon_results["js_files"], excluded)
+    recon_results["endpoints"] = filter_excluded_endpoints(
+        recon_results["endpoints"], excluded
+    )
+    recon_results["excluded_paths"] = excluded
+    recon_results["auto_excluded_destructive_paths"] = discovered_destructive
+
+    auth_meta.excluded_paths = excluded
+
     successful_tools = len(recon_results["tool_results"]) - len(recon_results["errors"])
 
     logger.info(
@@ -183,10 +220,15 @@ async def run_recon_async(state: ScanState) -> dict[str, Any]:
         f"{len(recon_results['subdomains'])} subdomains, "
         f"{len(recon_results['hosts'])} hosts, "
         f"{len(recon_results['technologies'])} technologies, "
-        f"{len(recon_results['urls'])} URLs"
+        f"{len(recon_results['urls'])} URLs, "
+        f"{len(excluded)} excluded paths"
     )
 
-    return {"recon_results": recon_results}
+    return {
+        "recon_results": recon_results,
+        "auth_scan": auth_meta.to_state_dict(),
+        "scope": {**scope, "excluded_paths": excluded},
+    }
 
 
 def run_recon(state: ScanState) -> dict[str, Any]:

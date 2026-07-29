@@ -38,6 +38,12 @@ export type AuthFailure = {
   cooldownSeconds?: number;
   /** Original Firebase code for logging only — never display. */
   firebaseCode?: string;
+  /** Email that already has an account under a different provider. */
+  conflictEmail?: string;
+  /** Firebase provider ids for the existing account (e.g. ["password"]). */
+  existingProviders?: string[];
+  /** Best guess for how the user should sign in instead (password | google | …). */
+  suggestedMethod?: string;
 };
 
 export type AuthResult = AuthSuccess | AuthFailure;

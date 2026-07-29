@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 import socket
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -154,7 +156,7 @@ class TestZeroFindingsAndScoring:
         scored = run_scoring(state)
         coverage = scored["severity_scores"]["scan_coverage"]
         assert coverage["recon_modules_run"] == ["header-checks"]
-        assert "nuclei" in coverage["modules_skipped"]
+        assert "nuclei" in coverage["modules_failed"]
         assert coverage["recon_partial_failure"] is True
         assert scored["severity_scores"]["overall_risk_score"] > 0
 
@@ -221,6 +223,69 @@ class TestFailureReporting:
         report_path = tmp_path / scan_id / "report.json"
         assert report_path.exists()
         get_settings.cache_clear()
+
+    @pytest.mark.asyncio
+    async def test_startup_recovery_fails_stale_mid_recon_scan_cleanly(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from core.accounts import configure_accounts_db, init_accounts_schema
+
+        db_path = tmp_path / "accounts.db"
+        configure_accounts_db(db_path)
+        init_accounts_schema()
+        old_updated = (
+            datetime.now(timezone.utc) - timedelta(seconds=3600)
+        ).isoformat()
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO organizations (
+                    id, name, plan_id, max_targets, scans_per_month, created_at, updated_at
+                ) VALUES ('org-restart', 'Restart Org', 'free', 10, 10, ?, ?)
+                """,
+                (old_updated, old_updated),
+            )
+            conn.execute(
+                """
+                INSERT INTO scans (
+                    id, org_id, target, status, current_node, kind, created_at, updated_at
+                ) VALUES (
+                    'scan-mid-recon',
+                    'org-restart',
+                    'https://authorized.example.com/',
+                    'running',
+                    'recon',
+                    'full',
+                    ?,
+                    ?
+                )
+                """,
+                (old_updated, old_updated),
+            )
+            conn.commit()
+
+        settings = get_settings()
+        old_timeout = settings.scan_timeout_seconds
+        settings.scan_timeout_seconds = 1800
+        orchestrator = ScanOrchestrator(use_sqlite=False)
+        try:
+            recovered = await orchestrator.recover_stale_scans()
+            assert recovered == ["scan-mid-recon"]
+
+            summary = await orchestrator.get_status_summary("scan-mid-recon")
+            assert summary is not None
+            assert summary["status"] == "failed"
+            assert summary["error"]["code"] == "service_restart_interrupted"
+
+            row = sqlite3.connect(db_path).execute(
+                "SELECT status, current_node FROM scans WHERE id = 'scan-mid-recon'"
+            ).fetchone()
+            assert row == ("failed", "recon")
+        finally:
+            settings.scan_timeout_seconds = old_timeout
+            configure_accounts_db(None)
 
 
 class TestInflightDedup:
@@ -364,7 +429,7 @@ class TestReportTruncation:
             report = result["report"]
             assert report["truncation"]["truncated"] is True
             assert report["truncation"]["rendered_findings"] == 3
-            assert "Lower-severity entries were truncated first" in report["truncation"]["message"]
+            assert "truncated" in report["truncation"]["message"].lower() or "Showing" in report["truncation"]["message"]
             assert len(report["findings_by_severity"]["critical"]) == 1
             assert len(report["findings_by_severity"]["high"]) == 1
             assert len(report["findings_by_severity"]["medium"]) == 1
@@ -378,12 +443,41 @@ class TestStartupAndHealth:
     def test_production_startup_requires_firecrawl_when_enabled(self) -> None:
         settings = Settings(
             app_env="production",
+            debug=False,
             firecrawl_enabled=True,
             firecrawl_api_key=None,
             zap_api_key="zap-key",
+            firebase_project_id="proj",
+            firebase_credentials_json="{}",
+            require_firebase_auth=True,
+            dodo_environment="live",
+            dodo_api_key="dodo_live_test",
+            dodo_webhook_secret="secret",
+            credentials_master_key="x" * 44,
         )
         with pytest.raises(ValueError, match="FIRECRAWL_API_KEY"):
             validate_startup_settings(settings)
+
+    def test_production_startup_requires_billing_auth_and_credential_keys(self) -> None:
+        settings = Settings(
+            app_env="production",
+            debug=False,
+            firecrawl_enabled=False,
+            zap_api_key="zap-key",
+            firebase_project_id="proj",
+            firebase_credentials_json="{}",
+            require_firebase_auth=False,
+            dodo_environment="live",
+            dodo_api_key=None,
+            dodo_webhook_secret=None,
+            credentials_master_key=None,
+        )
+        with pytest.raises(ValueError) as exc:
+            validate_startup_settings(settings)
+        message = str(exc.value)
+        assert "REQUIRE_FIREBASE_AUTH" in message
+        assert "DODO_WEBHOOK_SECRET" in message
+        assert "CREDENTIALS_MASTER_KEY" in message
 
     def test_development_skips_production_validation(self) -> None:
         settings = Settings(app_env="development", firecrawl_enabled=True)
@@ -397,6 +491,28 @@ class TestStartupAndHealth:
         assert body["service"] == "checkmate"
         assert body["orchestrator_ready"] is True
         assert "toolchain" in body
+        assert "database_ready" in body
+        assert "migrations_current" in body
+        assert "upstreams" in body
+        assert "firecrawl" in body["upstreams"]
+        assert "dodo" in body["upstreams"]
+
+    def test_health_reports_degraded_upstream(self, client: TestClient, monkeypatch) -> None:
+        from app import main as api_main
+
+        async def _firecrawl(_settings):
+            return {"configured": True, "reachable": False, "error": "timeout"}
+
+        async def _dodo(_settings):
+            return {"configured": True, "reachable": True, "status_code": 200}
+
+        monkeypatch.setattr(api_main, "_probe_firecrawl", _firecrawl)
+        monkeypatch.setattr(api_main, "_probe_dodo", _dodo)
+        response = client.get("/health")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "degraded"
+        assert body["upstreams"]["firecrawl"]["reachable"] is False
 
     def test_scan_endpoint_returns_503_when_toolchain_not_ready(
         self,

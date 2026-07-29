@@ -41,6 +41,76 @@ class SSRFError(ValueError):
     """Raised when a URL or resolved address is not safe to fetch."""
 
 
+def _parse_alternate_ip_literal(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """Detect decimal, hex, octal, and shorthand IPv4 literals that bypass ip_address()."""
+    bare = host.strip().lower()
+    if bare.startswith("[") and bare.endswith("]"):
+        bare = bare[1:-1]
+
+    try:
+        return ipaddress.ip_address(bare)
+    except ValueError:
+        pass
+
+    if bare.isdigit():
+        value = int(bare)
+        if 0 <= value <= 0xFFFFFFFF:
+            try:
+                return ipaddress.IPv4Address(value)
+            except ValueError:
+                return None
+
+    if bare.startswith("0x"):
+        try:
+            value = int(bare, 16)
+            if 0 <= value <= 0xFFFFFFFF:
+                return ipaddress.IPv4Address(value)
+        except ValueError:
+            return None
+
+    if "." not in bare:
+        return None
+
+    # Dotted forms: octal segments (0177.0.0.1), hex segments, or shorthand (127.1).
+    if not re.fullmatch(r"[0-9a-fx.]+", bare):
+        return None
+
+    parts = bare.split(".")
+    if not (1 <= len(parts) <= 4):
+        return None
+
+    octets: list[int] = []
+    for part in parts:
+        if not part:
+            return None
+        if part.startswith("0x"):
+            octets.append(int(part, 16))
+        elif (
+            len(part) > 1
+            and part.startswith("0")
+            and all(ch in "01234567" for ch in part[1:])
+        ):
+            octets.append(int(part, 8))
+        else:
+            octets.append(int(part))
+
+    if len(octets) == 1:
+        octets = [0, 0, 0, octets[0]]
+    elif len(octets) == 2:
+        octets = [octets[0], 0, 0, octets[1]]
+    elif len(octets) == 3:
+        octets = [octets[0], octets[1], 0, octets[2]]
+    elif len(octets) != 4:
+        return None
+
+    if not all(0 <= octet <= 255 for octet in octets):
+        return None
+    try:
+        return ipaddress.IPv4Address(".".join(str(octet) for octet in octets))
+    except ValueError:
+        return None
+
+
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """Return True if the IP must not be reached by outbound scan traffic."""
     if ip == _METADATA_IP:
@@ -70,6 +140,12 @@ def validate_hostname(hostname: str) -> str:
     # Strip bracket notation for IPv6 literals before IP parsing.
     bare = host[1:-1] if host.startswith("[") and host.endswith("]") else host
 
+    ip = _parse_alternate_ip_literal(bare)
+    if ip is not None:
+        if _is_blocked_ip(ip):
+            raise SSRFError(f"IP address '{bare}' resolves to a blocked range")
+        return str(ip)
+
     try:
         ip = ipaddress.ip_address(bare)
     except ValueError:
@@ -86,8 +162,8 @@ def validate_hostname(hostname: str) -> str:
     return host
 
 
-def resolve_and_validate_host(hostname: str) -> None:
-    """Resolve hostname via DNS and reject if any A/AAAA record is blocked."""
+def resolve_and_validate_host(hostname: str) -> str:
+    """Resolve hostname via DNS, reject blocked records, and return a safe IP."""
     host = validate_hostname(hostname)
 
     try:
@@ -98,7 +174,7 @@ def resolve_and_validate_host(hostname: str) -> None:
     if ip is not None:
         if _is_blocked_ip(ip):
             raise SSRFError(f"IP address '{host}' is in a blocked range")
-        return
+        return host
 
     try:
         addr_infos = socket.getaddrinfo(
@@ -113,6 +189,7 @@ def resolve_and_validate_host(hostname: str) -> None:
         raise SSRFError(f"Could not resolve hostname '{host}'")
 
     seen: set[str] = set()
+    first_safe: str | None = None
     for family, _type, _proto, _canonname, sockaddr in addr_infos:
         if family == socket.AF_INET:
             ip_str = sockaddr[0]
@@ -131,6 +208,11 @@ def resolve_and_validate_host(hostname: str) -> None:
             raise SSRFError(
                 f"Hostname '{host}' resolves to blocked address '{ip_str}'"
             )
+        if first_safe is None:
+            first_safe = ip_str
+    if first_safe is None:
+        raise SSRFError(f"Could not resolve hostname '{host}' to an IP address")
+    return first_safe
 
 
 def validate_url(url: str, *, resolve_dns: bool = True) -> str:
@@ -177,8 +259,47 @@ def validate_url(url: str, *, resolve_dns: bool = True) -> str:
     return f"{scheme}://{netloc}{parsed.path or ''}{parsed.query and '?' + parsed.query or ''}"
 
 
+def validate_login_url_for_site(
+    login_url: str,
+    site_target: str,
+    *,
+    resolve_dns: bool = True,
+) -> str:
+    """Validate an authenticated-scan login URL against SSRF rules and site origin.
+
+    The login page must share the same registrable hostname as the authorized
+    site target (or be an exact host match). Cross-origin / private / metadata
+    destinations are rejected so credentials cannot be posted off-site.
+    """
+    normalized_login = validate_url(login_url, resolve_dns=resolve_dns)
+    login_host = (urlparse(normalized_login).hostname or "").lower().rstrip(".")
+    if not login_host:
+        raise SSRFError("Login URL hostname is required")
+
+    site_normalized = site_target.strip()
+    if "://" not in site_normalized:
+        site_normalized = f"https://{site_normalized}"
+    site_host = (urlparse(site_normalized).hostname or "").lower().rstrip(".")
+    if not site_host:
+        site_host = validate_hostname(site_target)
+
+    def _host_matches(candidate: str, allowed: str) -> bool:
+        if candidate == allowed:
+            return True
+        return candidate.endswith("." + allowed)
+
+    if not (
+        _host_matches(login_host, site_host) or _host_matches(site_host, login_host)
+    ):
+        raise SSRFError(
+            f"Login URL host '{login_host}' is not same-site with "
+            f"authorized target '{site_host}'"
+        )
+    return normalized_login
+
+
 class SSRFValidationTransport(httpx.AsyncBaseTransport):
-    """httpx transport that re-validates every redirect destination."""
+    """httpx transport that validates and pins each request to a safe IP."""
 
     def __init__(
         self,
@@ -186,16 +307,49 @@ class SSRFValidationTransport(httpx.AsyncBaseTransport):
         max_redirects: int = DEFAULT_MAX_REDIRECTS,
         max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES,
         verify: bool = True,
+        inner: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._max_redirects = max_redirects
         self._max_response_bytes = max_response_bytes
-        self._inner = httpx.AsyncHTTPTransport(verify=verify)
+        self._inner = inner or httpx.AsyncHTTPTransport(verify=verify)
+
+    def _pin_request_to_validated_ip(self, request: httpx.Request) -> httpx.Request:
+        """Connect to the already-validated IP while preserving the Host header.
+
+        httpx/httpcore do not expose a stable public API to connect to one IP
+        while sending TLS SNI for another hostname. For scan modules that call
+        this transport with certificate verification disabled, rewriting the
+        URL host to the validated IP and preserving Host closes the DNS
+        rebinding window for the socket connection. Callers that need strict
+        certificate validation should use a custom httpcore network backend
+        that can set SNI independently.
+        """
+        url = request.url
+        host = url.host
+        if not host:
+            raise SSRFError(f"Could not parse hostname from URL: {url}")
+        pinned_ip = resolve_and_validate_host(host)
+        pinned_url = url.copy_with(host=pinned_ip)
+        headers = httpx.Headers(request.headers)
+        original_authority = host
+        if url.port is not None:
+            original_authority = f"{host}:{url.port}"
+        headers["host"] = original_authority
+        return httpx.Request(
+            method=request.method,
+            url=pinned_url,
+            headers=headers,
+            content=request.stream,
+            extensions=request.extensions,
+        )
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        url = str(request.url)
+        logical_request = request
+        url = str(logical_request.url)
         validate_url(url, resolve_dns=True)
+        pinned_request = self._pin_request_to_validated_ip(logical_request)
 
-        response = await self._inner.handle_async_request(request)
+        response = await self._inner.handle_async_request(pinned_request)
 
         redirect_count = 0
         while response.is_redirect:
@@ -210,16 +364,17 @@ class SSRFValidationTransport(httpx.AsyncBaseTransport):
             if not location:
                 break
 
-            next_url = httpx.URL(str(request.url)).join(location)
+            next_url = httpx.URL(str(logical_request.url)).join(location)
             validate_url(str(next_url), resolve_dns=True)
 
             await response.aclose()
-            request = httpx.Request(
-                method=request.method,
+            logical_request = httpx.Request(
+                method=logical_request.method,
                 url=next_url,
-                headers=request.headers,
+                headers=logical_request.headers,
             )
-            response = await self._inner.handle_async_request(request)
+            pinned_request = self._pin_request_to_validated_ip(logical_request)
+            response = await self._inner.handle_async_request(pinned_request)
 
         # Read the raw wire bytes (not auto-decompressed) so we never fail on
         # mismatched Content-Encoding headers when reconstructing the response.
@@ -241,7 +396,7 @@ class SSRFValidationTransport(httpx.AsyncBaseTransport):
             status_code=response.status_code,
             headers=headers,
             content=body,
-            request=request,
+            request=logical_request,
         )
 
 

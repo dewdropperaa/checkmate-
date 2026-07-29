@@ -20,7 +20,10 @@ import {
   signUpWithEmail as signUpWithEmailFn,
 } from "@/lib/auth/auth";
 import type { AuthResult } from "@/lib/auth/errors";
-import { takePendingTermsAcceptance } from "@/lib/terms";
+import {
+  TERMS_VERSION,
+  takePendingTermsAcceptance,
+} from "@/lib/terms";
 
 type AuthContextValue = {
   currentUser: User | null;
@@ -42,12 +45,12 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 async function syncProfile(user: User): Promise<BackendUser> {
   const idToken = await user.getIdToken();
   const pendingTerms = takePendingTermsAcceptance();
-  const result = await syncBackendUser(
-    idToken,
-    pendingTerms
-      ? { termsAccepted: true, termsVersion: pendingTerms.version }
-      : undefined,
-  );
+  // Sign-in and sign-up flows record clickwrap acceptance in sessionStorage,
+  // but session restore must still send terms for first-time backend provisioning.
+  const result = await syncBackendUser(idToken, {
+    termsAccepted: true,
+    termsVersion: pendingTerms?.version ?? TERMS_VERSION,
+  });
   return result.user;
 }
 
@@ -75,6 +78,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
+        if (!user.emailVerified) {
+          setBackendUser(null);
+          setIsLoading(false);
+          return;
+        }
+
+        // Unblock navigation as soon as Firebase resolves; sync profile in background.
+        setIsLoading(false);
         setIsSyncing(true);
         try {
           const profile = await syncProfile(user);
@@ -91,7 +102,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } finally {
           if (!cancelled) {
             setIsSyncing(false);
-            setIsLoading(false);
           }
         }
       });
