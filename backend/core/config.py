@@ -18,7 +18,10 @@ class Settings(BaseSettings):
     app_name: str = "checkmate"
     app_env: str = Field(
         default="development",
-        description="Runtime environment: development, staging, or production",
+        description=(
+            "Runtime environment: development, staging, hosted, or production. "
+            "'hosted' = cloud launch (Vercel + PaaS API) without live billing."
+        ),
     )
     debug: bool = False
     log_level: str = "INFO"
@@ -410,6 +413,13 @@ class Settings(BaseSettings):
         default=True,
         description="Start the APScheduler Watch Agent on API startup",
     )
+    cloud_scanning_enabled: bool = Field(
+        default=False,
+        description=(
+            "When false, POST /scan returns 503 on cloud hosts without ZAP/toolchain. "
+            "Use true on paid Docker stacks (render.starter.yaml)."
+        ),
+    )
 
     # Comma-separated founder/creator emails — always receive agency-tier access.
     creator_emails: str = Field(
@@ -445,7 +455,7 @@ class Settings(BaseSettings):
     @classmethod
     def _normalize_app_env(cls, value: str) -> str:
         normalized = (value or "development").strip().lower()
-        allowed = {"development", "staging", "production", "test"}
+        allowed = {"development", "staging", "hosted", "production", "test"}
         if normalized not in allowed:
             raise ValueError(
                 f"app_env must be one of {sorted(allowed)}, got '{value}'"
@@ -604,8 +614,51 @@ def validate_startup_settings(settings: Settings | None = None) -> None:
         if not settings.credentials_master_key:
             errors.append("CREDENTIALS_MASTER_KEY")
 
-    # Non-production environments must never reach live billing or prod Firebase.
-    if settings.app_env in {"development", "test", "staging"}:
+    elif settings.app_env == "hosted":
+        # Cloud API behind HTTPS (Render/Fly) with Vercel web — no local Docker.
+        if settings.debug:
+            errors.append(
+                "DEBUG=true is not allowed when APP_ENV=hosted "
+                "(refusing to run public API with dev diagnostics enabled)"
+            )
+        if not settings.firebase_project_id:
+            errors.append("FIREBASE_PROJECT_ID")
+        if not (
+            settings.firebase_credentials_json
+            or settings.firebase_credentials_path
+        ):
+            errors.append(
+                "FIREBASE_CREDENTIALS_JSON or FIREBASE_CREDENTIALS_PATH "
+                "(Firebase Admin service account — never a client web API key)"
+            )
+        if not settings.require_firebase_auth:
+            errors.append(
+                "REQUIRE_FIREBASE_AUTH=true "
+                "(public /scan routes must require verified Firebase tokens)"
+            )
+        if not settings.credentials_master_key:
+            errors.append(
+                "CREDENTIALS_MASTER_KEY "
+                "(required to encrypt authenticated-scan credentials at rest)"
+            )
+        if settings.firecrawl_enabled and not settings.firecrawl_api_key:
+            errors.append(
+                "FIRECRAWL_API_KEY (required when FIRECRAWL_ENABLED=true) "
+                "or set FIRECRAWL_ENABLED=false"
+            )
+        if settings.cloud_scanning_enabled and not settings.zap_api_key:
+            errors.append(
+                "ZAP_API_KEY (required when CLOUD_SCANNING_ENABLED=true — "
+                "see render.starter.yaml)"
+            )
+        if settings.dodo_api_key and _dodo_key_mode(settings.dodo_api_key) == "live":
+            errors.append(
+                "DODO_API_KEY must not be a live key when APP_ENV=hosted "
+                "(use APP_ENV=production after billing go-live)"
+            )
+
+    # Non-production environments must never reach live billing.
+    if settings.app_env in {"development", "test", "staging", "hosted"}:
         if settings.dodo_environment == "live":
             errors.append(
                 f"DODO_ENVIRONMENT=live is not allowed when APP_ENV={settings.app_env}"
@@ -616,6 +669,9 @@ def validate_startup_settings(settings: Settings | None = None) -> None:
                 "DODO_API_KEY is a live key (dodo_live_*) — use a test key "
                 f"when APP_ENV={settings.app_env}"
             )
+
+    # Dev/staging must not share the production Firebase project.
+    if settings.app_env in {"development", "test", "staging"}:
         if (
             settings.production_firebase_project_id
             and settings.firebase_project_id

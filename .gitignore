@@ -1,9 +1,18 @@
 # Environment files with secrets
 .env
+.env.*
+!.env.example
 backend/.env
+!backend/.env.example
+!backend/.env.production.example
+!backend/.env.hosted.example
+web/.env.local
+web/.env.vercel*
+web/.env*.local
 
 # Firebase Admin service-account keys (never commit)
 *-firebase-adminsdk-*.json
+checkmate-*-firebase-adminsdk-*.json
 backend/secrets/
 
 # Python

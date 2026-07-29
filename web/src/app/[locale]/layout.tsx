@@ -23,6 +23,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: t("title"),
     description: t("description"),
+    robots: {
+      index: true,
+      follow: true,
+      noarchive: true,
+      nosnippet: false,
+    },
     alternates: {
       languages: {
         fr: "/fr",

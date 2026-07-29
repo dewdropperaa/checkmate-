@@ -1527,6 +1527,19 @@ def _assert_scan_owner(scan_id: str, request: Request) -> None:
 
 @app.post("/scan", response_model=ScanCreateResponse, status_code=202)
 async def create_scan(body: ScanCreateRequest, request: Request) -> ScanCreateResponse:
+    settings = get_settings()
+    if not settings.cloud_scanning_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "cloud_scanning_disabled",
+                "message": (
+                    "Cloud scanning is not enabled on this API host. "
+                    "Run the backend locally (see README) for full scans, or deploy "
+                    "render.starter.yaml for a paid cloud scanner stack."
+                ),
+            },
+        )
     firebase_user = _require_firebase_if_configured(request)
     if firebase_user is None:
         auth_header = request.headers.get("Authorization", "").strip()

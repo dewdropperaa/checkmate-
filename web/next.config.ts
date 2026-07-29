@@ -41,6 +41,10 @@ const securityHeaders = [
     key: "Strict-Transport-Security",
     value: "max-age=63072000; includeSubDomains",
   },
+  {
+    key: "X-Robots-Tag",
+    value: "noarchive",
+  },
 ];
 const nextConfig: NextConfig = {
   poweredByHeader: false,

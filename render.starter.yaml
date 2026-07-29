@@ -1,0 +1,63 @@
+# Paid Render Blueprint (Starter + persistent disk + private ZAP).
+# See docs/LAUNCH_NO_DOCKER.md — use render.yaml for the $0 free tier instead.
+
+services:
+  - type: pserv
+    name: checkmate-zap
+    runtime: docker
+    dockerfilePath: ./backend/services/zap/Dockerfile
+    dockerContext: ./backend/services/zap
+    plan: starter
+    region: frankfurt
+    envVars:
+      - key: ZAP_API_KEY
+        generateValue: true
+
+  - type: web
+    name: checkmate-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    region: frankfurt
+    healthCheckPath: /health
+    disk:
+      name: checkmate-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: APP_ENV
+        value: hosted
+      - key: CLOUD_SCANNING_ENABLED
+        value: "true"
+      - key: DEBUG
+        value: "false"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: REQUIRE_FIREBASE_AUTH
+        value: "true"
+      - key: REQUIRE_TOOLCHAIN_AT_STARTUP
+        value: "false"
+      - key: FIRECRAWL_ENABLED
+        value: "false"
+      - key: DODO_ENVIRONMENT
+        value: test
+      - key: PUBLIC_APP_URL
+        value: https://checkmateapp-nine.vercel.app
+      - key: ZAP_API_URL
+        value: http://checkmate-zap:8080
+      - key: ZAP_API_KEY
+        fromService:
+          type: pserv
+          name: checkmate-zap
+          envVarKey: ZAP_API_KEY
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_CREDENTIALS_JSON
+        sync: false
+      - key: CREDENTIALS_MASTER_KEY
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false

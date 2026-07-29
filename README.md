@@ -178,6 +178,17 @@ Load the unpacked extension in Chrome:
 
 Ensure the backend is running at `http://localhost:8000` and that the active tab target appears in `AUTHORIZED_TARGETS`.
 
+## Launch (production)
+
+**No Docker on your laptop?** Start here:
+
+- **$0:** **[docs/LAUNCH_FREE.md](docs/LAUNCH_FREE.md)** (Render free + Vercel free — auth/dashboard; scans local or paid later)
+- **Paid cloud scanner:** **[docs/LAUNCH_NO_DOCKER.md](docs/LAUNCH_NO_DOCKER.md)** (`render.starter.yaml`)
+
+Full VPS / Cloudflare: **[docs/LAUNCH.md](docs/LAUNCH.md)**.
+
+Templates: `render.yaml`, `render.starter.yaml`, `web/.env.production.example`, `backend/.env.hosted.example`.
+
 ## Web (Vercel)
 
 The Next.js app lives in `web/`. On Vercel:

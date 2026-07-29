@@ -80,6 +80,7 @@ function withSecurityHeaders(response: NextResponse): NextResponse {
     "Permissions-Policy",
     "camera=(), microphone=(), geolocation=()",
   );
+  response.headers.set("X-Robots-Tag", "noarchive");
   response.headers.delete("X-Powered-By");
   return response;
 }

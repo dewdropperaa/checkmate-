@@ -1,0 +1,45 @@
+# $0 Render Blueprint — no Docker on your laptop, no paid plan.
+# Docs: docs/LAUNCH_FREE.md
+#
+# Tradeoffs: service sleeps after ~15 min idle (cold start), SQLite is ephemeral
+# (users re-sync from Firebase on login), cloud scans disabled (use local API for scans).
+
+services:
+  - type: web
+    name: checkmate-api
+    runtime: python
+    plan: free
+    region: frankfurt
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: hosted
+      - key: CLOUD_SCANNING_ENABLED
+        value: "false"
+      - key: DEBUG
+        value: "false"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: REQUIRE_FIREBASE_AUTH
+        value: "true"
+      - key: REQUIRE_TOOLCHAIN_AT_STARTUP
+        value: "false"
+      - key: FIRECRAWL_ENABLED
+        value: "false"
+      - key: WATCH_SCHEDULER_ENABLED
+        value: "false"
+      - key: DODO_ENVIRONMENT
+        value: test
+      - key: PUBLIC_APP_URL
+        value: https://checkmateapp-nine.vercel.app
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_CREDENTIALS_JSON
+        sync: false
+      - key: CREDENTIALS_MASTER_KEY
+        generateValue: true

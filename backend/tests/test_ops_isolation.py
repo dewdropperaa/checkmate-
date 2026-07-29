@@ -118,6 +118,49 @@ class TestEnvironmentIsolation:
         settings = Settings(app_env="development", firecrawl_enabled=True)
         validate_startup_settings(settings)
 
+    def test_hosted_requires_firebase_and_auth_without_live_billing(self) -> None:
+        settings = Settings(
+            app_env="hosted",
+            debug=False,
+            firecrawl_enabled=False,
+            cloud_scanning_enabled=False,
+            firebase_project_id="checkmate-prod",
+            firebase_credentials_json="{}",
+            require_firebase_auth=True,
+            credentials_master_key="x" * 44,
+            dodo_environment="test",
+        )
+        validate_startup_settings(settings)
+
+    def test_hosted_with_scans_requires_zap_key(self) -> None:
+        settings = Settings(
+            app_env="hosted",
+            debug=False,
+            firecrawl_enabled=False,
+            cloud_scanning_enabled=True,
+            zap_api_key="",
+            firebase_project_id="checkmate-prod",
+            firebase_credentials_json="{}",
+            require_firebase_auth=True,
+            credentials_master_key="x" * 44,
+        )
+        with pytest.raises(ValueError, match="ZAP_API_KEY"):
+            validate_startup_settings(settings)
+
+    def test_hosted_rejects_debug(self) -> None:
+        settings = Settings(
+            app_env="hosted",
+            debug=True,
+            firecrawl_enabled=False,
+            cloud_scanning_enabled=False,
+            firebase_project_id="checkmate-prod",
+            firebase_credentials_json="{}",
+            require_firebase_auth=True,
+            credentials_master_key="x" * 44,
+        )
+        with pytest.raises(ValueError, match="APP_ENV=hosted"):
+            validate_startup_settings(settings)
+
 
 class TestMigrations:
     def test_initial_migration_applies_to_empty_database(
