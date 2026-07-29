@@ -12,6 +12,7 @@ import {
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { getFirebaseAuth } from "@/lib/firebase";
 import { syncBackendUser, type BackendUser } from "@/lib/api";
+import { formatApiConnectionError } from "@/lib/apiBaseUrl";
 import {
   sendPasswordResetEmail as sendPasswordResetEmailFn,
   signInWithEmail as signInWithEmailFn,
@@ -95,9 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch (err) {
           if (!cancelled) {
             setBackendUser(null);
-            setSyncError(
-              err instanceof Error ? err.message : "Failed to sync account",
-            );
+            setSyncError(formatApiConnectionError(err));
           }
         } finally {
           if (!cancelled) {

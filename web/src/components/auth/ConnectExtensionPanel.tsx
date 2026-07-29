@@ -8,6 +8,7 @@ import {
   ApiError,
   mintExtensionToken,
 } from "@/lib/api";
+import { resolveExtensionBackendBaseUrl } from "@/lib/apiBaseUrl";
 import { EXTENSION_ID_QUERY_KEY } from "@/lib/authRedirect";
 import styles from "@/components/auth/auth.module.css";
 
@@ -33,10 +34,7 @@ declare global {
 }
 
 function backendBaseFromEnv(): string {
-  return (
-    process.env.NEXT_PUBLIC_API_BASE_URL?.trim().replace(/\/$/, "") ||
-    "http://127.0.0.1:8000"
-  );
+  return resolveExtensionBackendBaseUrl();
 }
 
 function sendTokenToExtension(

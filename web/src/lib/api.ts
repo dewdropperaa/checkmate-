@@ -3,14 +3,10 @@
  * Always sends a verified Firebase ID token — never a client-invented user id.
  */
 
+import { formatApiConnectionError, resolveApiBaseUrl } from "@/lib/apiBaseUrl";
+
 function apiBaseUrl(): string {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
-  if (!base) {
-    throw new Error(
-      "Missing NEXT_PUBLIC_API_BASE_URL. Set it in web/.env.local (e.g. http://127.0.0.1:8000).",
-    );
-  }
-  return base.replace(/\/$/, "");
+  return resolveApiBaseUrl();
 }
 
 export class ApiError extends Error {
@@ -28,15 +24,20 @@ async function authenticatedRequest<T>(
   idToken: string,
   init?: RequestInit,
 ): Promise<T> {
-  const response = await fetch(`${apiBaseUrl()}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${idToken}`,
-      Accept: "application/json",
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl()}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        Accept: "application/json",
+        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...init?.headers,
+      },
+    });
+  } catch (cause) {
+    throw new Error(formatApiConnectionError(cause));
+  }
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
     const detail = payload?.detail ?? payload;
@@ -271,15 +272,20 @@ export async function syncBackendUser(
     }
   }
 
-  const response = await fetch(`${apiBaseUrl()}/auth/sync`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${idToken}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl()}/auth/sync`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (cause) {
+    throw new Error(formatApiConnectionError(cause));
+  }
 
   if (!response.ok) {
     const detail = await response.text().catch(() => "");

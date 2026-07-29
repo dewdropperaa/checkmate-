@@ -15,6 +15,7 @@ const intlMiddleware = createMiddleware(routing);
 function buildCsp(): string {
   const isDev = process.env.NODE_ENV === "development";
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
+  const serverApi = process.env.API_BASE_URL?.trim();
   const connectExtras = [
     "https://*.googleapis.com",
     "https://*.firebaseio.com",
@@ -27,6 +28,13 @@ function buildCsp(): string {
       connectExtras.push(new URL(apiBase).origin);
     } catch {
       /* ignore invalid API URL in CSP build */
+    }
+  }
+  if (serverApi) {
+    try {
+      connectExtras.push(new URL(serverApi).origin);
+    } catch {
+      /* ignore */
     }
   }
   const connectSrc = [

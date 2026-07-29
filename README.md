@@ -186,9 +186,16 @@ The Next.js app lives in `web/`. On Vercel:
 2. Framework Preset: **Next.js**.
 3. Set these Environment Variables (from `web/.env.example`):
    - `NEXT_PUBLIC_FIREBASE_*` (all required Firebase web keys)
-   - `NEXT_PUBLIC_API_BASE_URL` (public HTTPS URL of the FastAPI backend)
+   - **Backend (pick one approach — do not use `127.0.0.1` in production):**
+     - **Option A:** `NEXT_PUBLIC_API_BASE_URL` = public HTTPS URL of your deployed FastAPI backend, **or**
+     - **Option B:** `API_BASE_URL` = same HTTPS API origin (server-only); the web app proxies via `/api/backend` when `NEXT_PUBLIC_API_BASE_URL` is unset or still points at loopback.
+4. **Redeploy** after changing any `NEXT_PUBLIC_*` or `API_BASE_URL` value (Next.js bakes them in at build time).
+5. **Firebase Console** (required for sign-in on your Vercel domain):
+   - Authentication → Settings → **Authorized domains** → add `your-app.vercel.app` (and your custom domain).
+   - If the API key has **HTTP referrer** restrictions (Google Cloud Console → Credentials), allow `https://your-app.vercel.app/*` and `https://*.vercel.app/*` for preview deployments.
+   - Ensure **Email/Password** (and Google, if used) sign-in methods are enabled.
 
-A root `vercel.json` also targets `web/package.json` via `@vercel/next` if the Root Directory is left at the repository root.
+The FastAPI backend must be deployed separately (Docker, VPS, etc.) and reachable over HTTPS before the dashboard can sync users or run scans.
 
 ```bash
 cd web
