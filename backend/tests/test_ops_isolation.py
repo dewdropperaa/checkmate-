@@ -138,6 +138,7 @@ class TestEnvironmentIsolation:
             debug=False,
             firecrawl_enabled=False,
             cloud_scanning_enabled=True,
+            cloud_scan_profile="full",
             zap_api_key="",
             firebase_project_id="checkmate-prod",
             firebase_credentials_json="{}",
@@ -146,6 +147,37 @@ class TestEnvironmentIsolation:
         )
         with pytest.raises(ValueError, match="ZAP_API_KEY"):
             validate_startup_settings(settings)
+
+    def test_hosted_firecrawl_profile_requires_firecrawl_key(self) -> None:
+        settings = Settings(
+            app_env="hosted",
+            debug=False,
+            cloud_scanning_enabled=True,
+            cloud_scan_profile="firecrawl",
+            firecrawl_enabled=True,
+            firecrawl_api_key="",
+            firebase_project_id="checkmate-prod",
+            firebase_credentials_json="{}",
+            require_firebase_auth=True,
+            credentials_master_key="x" * 44,
+        )
+        with pytest.raises(ValueError, match="FIRECRAWL_API_KEY"):
+            validate_startup_settings(settings)
+
+    def test_hosted_firecrawl_profile_passes_without_zap(self) -> None:
+        settings = Settings(
+            app_env="hosted",
+            debug=False,
+            cloud_scanning_enabled=True,
+            cloud_scan_profile="firecrawl",
+            firecrawl_enabled=True,
+            firecrawl_api_key="fc-test",
+            firebase_project_id="checkmate-prod",
+            firebase_credentials_json="{}",
+            require_firebase_auth=True,
+            credentials_master_key="x" * 44,
+        )
+        validate_startup_settings(settings)
 
     def test_hosted_rejects_debug(self) -> None:
         settings = Settings(

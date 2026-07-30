@@ -199,6 +199,15 @@ def get_toolchain_report() -> ToolchainReport:
 
 def ensure_toolchain_ready() -> None:
     """Gate scan creation — raises ValueError when tools are not ready."""
+    settings = get_settings()
+    if settings.cloud_scan_profile == "firecrawl":
+        if not settings.firecrawl_enabled or not settings.firecrawl_api_key:
+            raise ValueError(
+                "Cloud scans (firecrawl profile) require FIRECRAWL_ENABLED=true "
+                "and FIRECRAWL_API_KEY."
+            )
+        return
+
     report = get_toolchain_report()
     if report.ready:
         return

@@ -1,5 +1,5 @@
 # Paid Render Blueprint (Starter + persistent disk + private ZAP).
-# See docs/LAUNCH_NO_DOCKER.md — use render.yaml for the $0 free tier instead.
+# Production default is root render.yaml. Free tier: render.free.yaml
 
 services:
   - type: pserv

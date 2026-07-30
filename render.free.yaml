@@ -1,6 +1,8 @@
-# $0 Render Blueprint — auth/dashboard only. NO ZAP on this tier.
-# For full ZAP active scans without Render billing, see docs/LAUNCH_ZAP_ORACLE.md
-# For ZAP on Render paid: render.starter.yaml (~$14/mo)
+# $0 Render Blueprint — no Docker on your laptop, no paid plan.
+# Docs: docs/LAUNCH_FREE.md
+#
+# Tradeoffs: service sleeps after ~15 min idle (cold start), SQLite is ephemeral
+# (users re-sync from Firebase on login), cloud scans disabled (use local API for scans).
 
 services:
   - type: web
@@ -41,9 +43,3 @@ services:
         sync: false
       - key: CREDENTIALS_MASTER_KEY
         generateValue: true
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: GROQ_API_KEY
-        sync: false
-      - key: FIRECRAWL_API_KEY
-        sync: false

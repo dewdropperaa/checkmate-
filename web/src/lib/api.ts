@@ -3,10 +3,22 @@
  * Always sends a verified Firebase ID token — never a client-invented user id.
  */
 
-import { formatApiConnectionError, resolveApiBaseUrl } from "@/lib/apiBaseUrl";
+import {
+  formatApiConnectionError,
+  resolveApiBaseUrl,
+  tunnelBypassHeaders,
+} from "@/lib/apiBaseUrl";
 
 function apiBaseUrl(): string {
   return resolveApiBaseUrl();
+}
+
+function apiHeaders(extra?: HeadersInit): HeadersInit {
+  const base = apiBaseUrl();
+  return {
+    ...tunnelBypassHeaders(base),
+    ...Object.fromEntries(new Headers(extra).entries()),
+  };
 }
 
 export class ApiError extends Error {
@@ -28,12 +40,12 @@ async function authenticatedRequest<T>(
   try {
     response = await fetch(`${apiBaseUrl()}${path}`, {
       ...init,
-      headers: {
+      headers: apiHeaders({
         Authorization: `Bearer ${idToken}`,
         Accept: "application/json",
         ...(init?.body ? { "Content-Type": "application/json" } : {}),
         ...init?.headers,
-      },
+      }),
     });
   } catch (cause) {
     throw new Error(formatApiConnectionError(cause));
@@ -276,11 +288,11 @@ export async function syncBackendUser(
   try {
     response = await fetch(`${apiBaseUrl()}/auth/sync`, {
       method: "POST",
-      headers: {
+      headers: apiHeaders({
         Authorization: `Bearer ${idToken}`,
         "Content-Type": "application/json",
         Accept: "application/json",
-      },
+      }),
       body: JSON.stringify(body),
     });
   } catch (cause) {
@@ -355,10 +367,10 @@ export async function fetchScanReportPdf(
   const response = await fetch(
     `${apiBaseUrl()}/scan/${encodeURIComponent(scanId)}/report/pdf`,
     {
-      headers: {
+      headers: apiHeaders({
         Authorization: `Bearer ${idToken}`,
         Accept: "application/pdf",
-      },
+      }),
     },
   );
   if (!response.ok) {

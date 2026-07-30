@@ -414,10 +414,17 @@ class Settings(BaseSettings):
         description="Start the APScheduler Watch Agent on API startup",
     )
     cloud_scanning_enabled: bool = Field(
-        default=False,
+        default=True,
         description=(
-            "When false, POST /scan returns 503 on cloud hosts without ZAP/toolchain. "
-            "Use true on paid Docker stacks (render.starter.yaml)."
+            "When false, POST /scan returns 503. Set false only when the API "
+            "cannot run any scan backend."
+        ),
+    )
+    cloud_scan_profile: str = Field(
+        default="full",
+        description=(
+            "full = local/Docker toolchain + ZAP active scans. "
+            "firecrawl = hosted cloud scans via Firecrawl API (Render free tier, no ZAP)."
         ),
     )
 
@@ -459,6 +466,17 @@ class Settings(BaseSettings):
         if normalized not in allowed:
             raise ValueError(
                 f"app_env must be one of {sorted(allowed)}, got '{value}'"
+            )
+        return normalized
+
+    @field_validator("cloud_scan_profile")
+    @classmethod
+    def _normalize_cloud_scan_profile(cls, value: str) -> str:
+        normalized = (value or "full").strip().lower()
+        allowed = {"full", "firecrawl"}
+        if normalized not in allowed:
+            raise ValueError(
+                f"cloud_scan_profile must be one of {sorted(allowed)}, got '{value}'"
             )
         return normalized
 
@@ -646,11 +664,18 @@ def validate_startup_settings(settings: Settings | None = None) -> None:
                 "FIRECRAWL_API_KEY (required when FIRECRAWL_ENABLED=true) "
                 "or set FIRECRAWL_ENABLED=false"
             )
-        if settings.cloud_scanning_enabled and not settings.zap_api_key:
-            errors.append(
-                "ZAP_API_KEY (required when CLOUD_SCANNING_ENABLED=true — "
-                "see render.starter.yaml)"
-            )
+        if settings.cloud_scanning_enabled:
+            if settings.cloud_scan_profile == "firecrawl":
+                if not settings.firecrawl_enabled or not settings.firecrawl_api_key:
+                    errors.append(
+                        "FIRECRAWL_API_KEY (required when CLOUD_SCAN_PROFILE=firecrawl) "
+                        "and FIRECRAWL_ENABLED=true"
+                    )
+            elif not settings.zap_api_key:
+                errors.append(
+                    "ZAP_API_KEY (required when CLOUD_SCAN_PROFILE=full — "
+                    "see render.starter.yaml)"
+                )
         if settings.dodo_api_key and _dodo_key_mode(settings.dodo_api_key) == "live":
             errors.append(
                 "DODO_API_KEY must not be a live key when APP_ENV=hosted "

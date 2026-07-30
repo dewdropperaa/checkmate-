@@ -138,6 +138,13 @@ async def _node_recon(state: ScanState) -> dict[str, Any]:
 
 def _node_plan_active_tests(state: ScanState) -> dict[str, Any]:
     log_node_transition(state["scan_id"], "plan_active_tests")
+    settings = get_settings()
+    if settings.cloud_scan_profile == "firecrawl":
+        return {
+            "planned_active_tests": [],
+            "human_approval_needed": False,
+            "status": "running",
+        }
     planned = list(_INTRUSIVE_TOOLS)
     return {
         "planned_active_tests": planned,
@@ -286,6 +293,14 @@ def _route_after_approval(state: ScanState) -> Literal["active_detection"]:
     return "active_detection"
 
 
+def _route_after_plan_active_tests(
+    state: ScanState,
+) -> Literal["human_approval_gate", "active_detection"]:
+    if state.get("planned_active_tests"):
+        return "human_approval_gate"
+    return "active_detection"
+
+
 def build_scan_graph() -> StateGraph:
     """Construct the scan StateGraph (uncompiled)."""
     graph = StateGraph(ScanState)
@@ -309,7 +324,14 @@ def build_scan_graph() -> StateGraph:
     )
     graph.add_edge("recon", "passive_detection")
     graph.add_edge("passive_detection", "plan_active_tests")
-    graph.add_edge("plan_active_tests", "human_approval_gate")
+    graph.add_conditional_edges(
+        "plan_active_tests",
+        _route_after_plan_active_tests,
+        {
+            "human_approval_gate": "human_approval_gate",
+            "active_detection": "active_detection",
+        },
+    )
     graph.add_conditional_edges(
         "human_approval_gate",
         _route_after_approval,

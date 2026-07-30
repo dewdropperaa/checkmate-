@@ -86,10 +86,18 @@ function withSecurityHeaders(response: NextResponse): NextResponse {
 }
 
 export default function middleware(request: NextRequest) {
+  // Do not run next-intl on the API proxy (would break /auth/sync).
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    return NextResponse.next();
+  }
   const response = intlMiddleware(request);
   return withSecurityHeaders(response);
 }
 
 export const config = {
-  matcher: ["/", "/(fr|en)/:path*", "/((?!_next|_vercel|.*\\..*).*)"],
+  matcher: [
+    "/",
+    "/(fr|en)/:path*",
+    "/((?!_next|_vercel|api/|.*\\..*).*)",
+  ],
 };

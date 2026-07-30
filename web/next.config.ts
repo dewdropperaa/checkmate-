@@ -50,15 +50,15 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // Keep file tracing inside this app when a parent lockfile exists.
   outputFileTracingRoot: path.join(__dirname),
+  /**
+   * Legacy /api/backend/* URLs rewrite to the catch-all proxy route.
+   * Path-to-path rewrites preserve POST bodies (query-param rewrites do not).
+   */
   async rewrites() {
-    const backend = process.env.API_BASE_URL?.trim().replace(/\/$/, "");
-    if (!backend) {
-      return [];
-    }
     return [
       {
         source: "/api/backend/:path*",
-        destination: `${backend}/:path*`,
+        destination: "/api/backend-proxy/:path*",
       },
     ];
   },

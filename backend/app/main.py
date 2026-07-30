@@ -60,7 +60,11 @@ from core.accounts import (
 )
 from core.audit import log_scan_triggered
 from core.config import get_settings, validate_startup_settings
-from core.credential_crypto import encrypt_credentials, redact_username
+from core.credential_crypto import (
+    CredentialCryptoError,
+    encrypt_credentials,
+    redact_username,
+)
 from core.firebase_auth import (
     AuthenticatedUser,
     ensure_email_verified,
@@ -555,6 +559,34 @@ def _risk_severity(score: float | None) -> str | None:
     return "info"
 
 
+def _normalize_scan_status_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Coerce orchestrator/DB fields into ScanStatusResponse-safe shapes.
+
+    Empty findings used to become findings_count=None, which fails response
+    validation and surfaces as HTTP 500 on every dashboard poll.
+    """
+    normalized = dict(payload)
+    findings_count = normalized.get("findings_count")
+    if findings_count is None:
+        normalized["findings_count"] = 0
+    else:
+        try:
+            normalized["findings_count"] = int(findings_count)
+        except (TypeError, ValueError):
+            normalized["findings_count"] = 0
+
+    error = normalized.get("error")
+    if error is None:
+        pass
+    elif isinstance(error, str):
+        normalized["error"] = {"code": "scan_error", "message": error}
+    elif isinstance(error, dict):
+        normalized["error"] = {str(key): str(value) for key, value in error.items()}
+    else:
+        normalized["error"] = {"code": "scan_error", "message": str(error)}
+    return normalized
+
+
 async def _sync_persisted_scan(scan_id: str) -> dict[str, Any] | None:
     """Refresh dashboard metadata from the authoritative graph snapshot."""
     orchestrator = get_orchestrator()
@@ -567,7 +599,10 @@ async def _sync_persisted_scan(scan_id: str) -> dict[str, Any] | None:
     score = float(score_value) if score_value is not None else None
     severity_counts = (values.get("severity_scores") or {}).get("severity_counts") or {}
     findings = values.get("findings") or []
-    findings_count = len(findings) if findings else None
+    # Always an int: empty list is 0 (None previously broke ScanStatusResponse).
+    findings_count = len(findings) if isinstance(findings, list) else int(
+        summary.get("findings_count") or 0
+    )
     critical_high = None
     if isinstance(severity_counts, dict) and severity_counts:
         critical_high = int(severity_counts.get("critical") or 0) + int(
@@ -588,14 +623,16 @@ async def _sync_persisted_scan(scan_id: str) -> dict[str, Any] | None:
         findings_count=findings_count,
         critical_high_count=critical_high,
     )
-    return {
-        **summary,
-        "status": display_status,
-        "overall_risk_score": score,
-        "severity": _risk_severity(score),
-        "findings_count": findings_count,
-        "critical_high_count": critical_high,
-    }
+    return _normalize_scan_status_payload(
+        {
+            **summary,
+            "status": display_status,
+            "overall_risk_score": score,
+            "severity": _risk_severity(score),
+            "findings_count": findings_count,
+            "critical_high_count": critical_high,
+        }
+    )
 
 
 _scan_rate_limiter = ScanRateLimiter()
@@ -1122,7 +1159,19 @@ async def put_site_credentials(
             },
         ) from exc
 
-    blob = encrypt_credentials(body.username, body.password)
+    try:
+        blob = encrypt_credentials(body.username, body.password)
+    except CredentialCryptoError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "credentials_encryption_unavailable",
+                "message": (
+                    "Credential encryption is not configured on this API host. "
+                    "Set CREDENTIALS_MASTER_KEY and restart the backend."
+                ),
+            },
+        ) from exc
     record = upsert_site_auth_credentials(
         site_id=site.id,
         org_id=account.org_id,
@@ -1695,7 +1744,9 @@ async def get_scan_status(
             )
 
     persisted = await _sync_persisted_scan(scan_id)
-    return ScanStatusResponse(**(persisted or summary))
+    return ScanStatusResponse(
+        **_normalize_scan_status_payload(persisted or summary)
+    )
 
 
 @app.post("/scan/{scan_id}/approve", response_model=ScanApprovalResponse)
