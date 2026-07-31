@@ -31,8 +31,6 @@ services:
       - SCAN_RATE_LIMIT_MAX_CONCURRENT_PER_CLIENT=${SCAN_RATE_LIMIT_MAX_CONCURRENT_PER_CLIENT:-1}
       - ZAP_MAX_CONCURRENT=${ZAP_MAX_CONCURRENT:-1}
     volumes:
-      # Placeholder mount for external security tool binaries (nmap, nuclei, etc.)
-      - ./tools-bin:/opt/tools:ro
       # Persistent customer data — survives container recreate/redeploy.
       - app-data:/app/data
       - app-reports:/app/reports
