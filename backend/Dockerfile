@@ -1,16 +1,18 @@
 # Stage 1: Build Go security tools
-FROM golang:1.22-alpine AS tools-builder
+FROM golang:1.26-alpine AS tools-builder
 
 RUN apk add --no-cache git
 
 ENV GOPATH=/go
 ENV PATH="${GOPATH}/bin:${PATH}"
+# Fallback mirrors help on VPS builds when proxy.golang.org times out.
+ENV GOPROXY=https://proxy.golang.org,https://goproxy.io,direct
 
-# Install ProjectDiscovery tools
-RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
-    go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest && \
-    go install -v github.com/projectdiscovery/katana/cmd/katana@latest && \
-    go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+# Install separately so successful tools stay cached if a later download fails.
+RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+RUN go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
+RUN go install -v github.com/projectdiscovery/katana/cmd/katana@latest
+RUN go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
 
 # Stage 2: Node tools (retire.js)
 FROM node:20-alpine AS node-builder
