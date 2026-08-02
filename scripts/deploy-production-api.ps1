@@ -1,11 +1,13 @@
 # One-time production API setup: Render blueprint + Vercel wiring.
-# Default: free tier (no credit card). Use -Paid for render.starter.yaml (scans).
+# Oracle VPS + Cloudflare Tunnel: pass -RenderApiUrl https://….trycloudflare.com
 param(
   [string]$RenderApiUrl,
 
   [switch]$Paid,
 
-  [switch]$SkipVercelSync
+  [switch]$SkipVercelSync,
+
+  [switch]$AllowTunnel
 )
 
 $ErrorActionPreference = "Stop"
@@ -70,15 +72,26 @@ if (-not $RenderApiUrl) {
 }
 
 $RenderApiUrl = $RenderApiUrl.Trim().TrimEnd("/")
+$isTunnel = $RenderApiUrl -match "loca\.lt|localtunnel\.me|ngrok|trycloudflare\.com"
+if ($isTunnel -and -not $AllowTunnel) {
+  Write-Host "Cloudflare/quick tunnel detected. Re-run with -AllowTunnel for Oracle VPS setup." -ForegroundColor Yellow
+}
+
 try {
   $health = Invoke-RestMethod -Uri "$RenderApiUrl/health" -TimeoutSec 60
-  Write-Host "Render health: $($health.status) (zap=$($health.zap_ready))" -ForegroundColor Green
+  Write-Host "API health: $($health.status) (zap=$($health.zap_ready))" -ForegroundColor Green
 } catch {
-  Write-Error "Cannot reach $RenderApiUrl/health - wait for Render deploy or check the URL."
+  Write-Error "Cannot reach $RenderApiUrl/health - check tunnel/API is running."
 }
 
 if (-not $SkipVercelSync) {
-  & (Join-Path $PSScriptRoot "sync-vercel-api-url.ps1") -ApiUrl $RenderApiUrl
+  $syncArgs = @{
+    ApiUrl = $RenderApiUrl
+  }
+  if ($AllowTunnel -or $isTunnel) {
+    $syncArgs.AllowDevTunnel = $true
+  }
+  & (Join-Path $PSScriptRoot "sync-vercel-api-url.ps1") @syncArgs
   Push-Location $repoRoot
   try {
     npx --yes vercel@latest deploy --prod --yes

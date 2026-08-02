@@ -16,9 +16,9 @@ if ($ApiUrl -notmatch "^https://") {
 $isTunnel = $ApiUrl -match "loca\.lt|localtunnel\.me|ngrok|trycloudflare\.com"
 if ($isTunnel -and -not $AllowDevTunnel) {
   Write-Error @"
-Production cannot use a dev tunnel ($ApiUrl).
-Deploy the cloud API first:  .\scripts\deploy-production-api.ps1
-Then pass your Render URL, e.g. https://checkmate-api.onrender.com
+Production cannot use a dev tunnel ($ApiUrl) without -AllowDevTunnel.
+Oracle VPS:  .\scripts\sync-vercel-api-url.ps1 -ApiUrl $ApiUrl -AllowDevTunnel
+Render:      .\scripts\deploy-production-api.ps1 -RenderApiUrl https://checkmate-api.onrender.com
 "@
   exit 1
 }
