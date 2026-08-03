@@ -301,3 +301,36 @@ def test_verify_id_token_rejects_empty():
         verify_id_token("")
     assert excinfo.value.status_code == 401
     assert excinfo.value.detail["error"] == "missing_token"
+
+
+def test_missing_credentials_path_returns_503_not_invalid_token(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Laptop Windows paths on a Linux container must not look like bad JWTs."""
+    import core.firebase_auth as fa
+    from core.config import Settings, get_settings
+
+    get_settings.cache_clear()
+    fa._firebase_ready = False  # noqa: SLF001
+    monkeypatch.setattr(
+        fa,
+        "get_settings",
+        lambda: Settings(
+            app_env="development",
+            firebase_project_id="checkmate-68921",
+            firebase_credentials_path="C:/Users/pc/Desktop/scan/missing-sa.json",
+            firebase_credentials_json=None,
+        ),
+    )
+    # Ensure no leftover Admin app from other tests.
+    import firebase_admin
+
+    for app in list(firebase_admin._apps.values()):  # type: ignore[attr-defined]
+        firebase_admin.delete_app(app)
+
+    with pytest.raises(HTTPException) as excinfo:
+        fa.verify_id_token("header.payload.sig")
+    assert excinfo.value.status_code == 503
+    assert excinfo.value.detail["error"] == "auth_misconfigured"
+    get_settings.cache_clear()
+    fa._firebase_ready = False  # noqa: SLF001

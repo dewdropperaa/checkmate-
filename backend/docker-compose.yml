@@ -34,6 +34,11 @@ services:
       # Persistent customer data — survives container recreate/redeploy.
       - app-data:/app/data
       - app-reports:/app/reports
+      # Firebase Admin service-account JSON (host path → container).
+      # Create backend/secrets/firebase-sa.json (gitignored) and set:
+      #   FIREBASE_CREDENTIALS_PATH=/app/secrets/firebase-sa.json
+      # Or set FIREBASE_CREDENTIALS_JSON instead (no mount needed).
+      - ./secrets:/app/secrets:ro
     depends_on:
       zap:
         condition: service_healthy

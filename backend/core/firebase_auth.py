@@ -11,6 +11,7 @@ import json
 import logging
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, HTTPException, status
@@ -23,6 +24,10 @@ logger = logging.getLogger(__name__)
 _bearer = HTTPBearer(auto_error=False)
 _init_lock = threading.Lock()
 _firebase_ready = False
+
+
+class FirebaseAdminConfigError(RuntimeError):
+    """Server-side Admin SDK misconfiguration (not a client token problem)."""
 
 
 @dataclass(frozen=True)
@@ -66,20 +71,39 @@ def _init_firebase_admin() -> None:
             try:
                 info = json.loads(settings.firebase_credentials_json)
             except json.JSONDecodeError as exc:
-                raise RuntimeError(
+                raise FirebaseAdminConfigError(
                     "FIREBASE_CREDENTIALS_JSON is not valid JSON"
                 ) from exc
-            cred = credentials.Certificate(info)
+            try:
+                cred = credentials.Certificate(info)
+            except Exception as exc:  # noqa: BLE001
+                raise FirebaseAdminConfigError(
+                    "FIREBASE_CREDENTIALS_JSON is not a valid service-account "
+                    "certificate"
+                ) from exc
         elif settings.firebase_credentials_path:
-            cred = credentials.Certificate(settings.firebase_credentials_path)
+            cred_path = Path(settings.firebase_credentials_path)
+            if not cred_path.is_file():
+                raise FirebaseAdminConfigError(
+                    "FIREBASE_CREDENTIALS_PATH does not exist inside this "
+                    f"process: {cred_path}. For Docker, mount the service-account "
+                    "JSON (see docker-compose.yml) or set FIREBASE_CREDENTIALS_JSON."
+                )
+            try:
+                cred = credentials.Certificate(str(cred_path))
+            except Exception as exc:  # noqa: BLE001
+                raise FirebaseAdminConfigError(
+                    "FIREBASE_CREDENTIALS_PATH is not a valid service-account "
+                    f"certificate: {cred_path}"
+                ) from exc
         else:
             # Application Default Credentials (GCP / GOOGLE_APPLICATION_CREDENTIALS).
             try:
                 cred = credentials.ApplicationDefault()
             except Exception:  # noqa: BLE001
-                if settings.app_env == "production":
-                    raise RuntimeError(
-                        "Firebase Admin credentials required in production. "
+                if settings.app_env in {"production", "hosted", "staging"}:
+                    raise FirebaseAdminConfigError(
+                        "Firebase Admin credentials required. "
                         "Set FIREBASE_CREDENTIALS_JSON or "
                         "FIREBASE_CREDENTIALS_PATH / GOOGLE_APPLICATION_CREDENTIALS."
                     )
@@ -95,12 +119,17 @@ def _init_firebase_admin() -> None:
 
         firebase_admin.initialize_app(cred, options or None)
         _firebase_ready = True
+        logger.info(
+            "Firebase Admin initialized for project %s",
+            settings.firebase_project_id or "(default)",
+        )
 
 
 def verify_id_token(token: str) -> AuthenticatedUser:
     """Verify a Firebase ID token and return the authenticated user.
 
     Raises HTTPException 401 on missing/invalid/expired tokens.
+    Raises HTTPException 503 when Admin credentials are misconfigured.
     """
     if not token or not token.strip():
         raise HTTPException(
@@ -118,8 +147,25 @@ def verify_id_token(token: str) -> AuthenticatedUser:
         decoded = firebase_auth.verify_id_token(token.strip())
     except HTTPException:
         raise
-    except Exception as exc:  # noqa: BLE001 - map all verify failures to 401
-        logger.info("Firebase ID token verification failed: %s", type(exc).__name__)
+    except FirebaseAdminConfigError as exc:
+        logger.error("Firebase Admin misconfigured: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "auth_misconfigured",
+                "message": (
+                    "Authentication service is misconfigured. "
+                    "Firebase Admin credentials are missing or invalid on the API host."
+                ),
+            },
+        ) from exc
+    except Exception as exc:  # noqa: BLE001 - map verify failures to 401
+        # Log class + message for ops (never log the raw bearer token).
+        logger.info(
+            "Firebase ID token verification failed: %s: %s",
+            type(exc).__name__,
+            exc,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={

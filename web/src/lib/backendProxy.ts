@@ -92,11 +92,19 @@ export async function proxyBackendRequest(
 
   const responseHeaders = new Headers();
   upstreamResponse.headers.forEach((value, key) => {
-    if (HOP_BY_HOP.has(key.toLowerCase())) return;
+    const lower = key.toLowerCase();
+    if (HOP_BY_HOP.has(lower)) return;
+    // fetch() may already decompress; never re-advertise upstream encodings.
+    if (lower === "content-encoding" || lower === "content-length") return;
     responseHeaders.set(key, value);
   });
 
-  return new NextResponse(upstreamResponse.body, {
+  // Buffer the body. Piping upstreamResponse.body can yield empty responses on
+  // Vercel when the upstream (e.g. Cloudflare tunnel) uses chunked transfer.
+  const payload = Buffer.from(await upstreamResponse.arrayBuffer());
+  responseHeaders.set("content-length", String(payload.byteLength));
+
+  return new NextResponse(payload, {
     status: upstreamResponse.status,
     statusText: upstreamResponse.statusText,
     headers: responseHeaders,
