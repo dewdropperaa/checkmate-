@@ -97,15 +97,23 @@ class TestBinaryValidation:
 
     @patch("tools.base._find_in_path")
     def test_resolve_binary_rejects_missing_binary(
-        self, mock_find: MagicMock
+        self, mock_find: MagicMock, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Missing binaries should raise error."""
         mock_find.return_value = None
+        # Local QA / developer shells often point tools_binary_dir at a real
+        # tools-bin/; force a missing directory so this stays unit-test pure.
+        from core.config import get_settings
+
+        get_settings.cache_clear()
+        monkeypatch.setenv("TOOLS_BINARY_DIR", "/nonexistent/tools-bin-qa")
+        get_settings.cache_clear()
 
         with pytest.raises(BinaryValidationError) as exc_info:
             resolve_binary_path("subfinder")
 
         assert "not found" in str(exc_info.value)
+        get_settings.cache_clear()
 
     @patch("tools.base._find_in_path")
     @patch("pathlib.Path.is_symlink")

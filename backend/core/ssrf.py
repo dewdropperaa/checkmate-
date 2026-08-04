@@ -314,15 +314,13 @@ class SSRFValidationTransport(httpx.AsyncBaseTransport):
         self._inner = inner or httpx.AsyncHTTPTransport(verify=verify)
 
     def _pin_request_to_validated_ip(self, request: httpx.Request) -> httpx.Request:
-        """Connect to the already-validated IP while preserving the Host header.
+        """Connect to the already-validated IP while preserving Host + TLS SNI.
 
-        httpx/httpcore do not expose a stable public API to connect to one IP
-        while sending TLS SNI for another hostname. For scan modules that call
-        this transport with certificate verification disabled, rewriting the
-        URL host to the validated IP and preserving Host closes the DNS
-        rebinding window for the socket connection. Callers that need strict
-        certificate validation should use a custom httpcore network backend
-        that can set SNI independently.
+        Rewriting the URL host to the validated IP closes the DNS-rebinding
+        window for the TCP connect. Without also setting the httpx
+        ``sni_hostname`` extension, OpenSSL would send the IP as SNI and many
+        hosts (including example.com) abort the handshake — which previously
+        surfaced as header-checks ``ConnectError: SSLV3_ALERT_HANDSHAKE_FAILURE``.
         """
         url = request.url
         host = url.host
@@ -335,12 +333,25 @@ class SSRFValidationTransport(httpx.AsyncBaseTransport):
         if url.port is not None:
             original_authority = f"{host}:{url.port}"
         headers["host"] = original_authority
+        # Pass stream= (not content=) so httpx preserves the original
+        # ByteStream/AsyncByteStream type. content=request.stream wraps the
+        # stream in IteratorByteStream, which AsyncHTTPTransport rejects with
+        # AssertionError — collapsing header-checks (and every other safe-HTTP
+        # caller) into a blank "All N origin checks failed".
+        extensions = dict(request.extensions or {})
+        # Keep original hostname for SNI / cert checks when we connect by IP.
+        # Skip when the caller already overrode SNI, or the URL host was an IP.
+        if "sni_hostname" not in extensions:
+            try:
+                ipaddress.ip_address(host)
+            except ValueError:
+                extensions["sni_hostname"] = host
         return httpx.Request(
             method=request.method,
             url=pinned_url,
             headers=headers,
-            content=request.stream,
-            extensions=request.extensions,
+            stream=request.stream,
+            extensions=extensions,
         )
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:

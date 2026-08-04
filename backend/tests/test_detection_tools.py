@@ -341,7 +341,12 @@ class TestRetireJSTool:
         mock_process.communicate = AsyncMock(return_value=(mock_output.encode(), b""))
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process), \
-             patch.object(RetireJSTool, "get_binary_path", return_value=Path("/opt/tools/retire")):
+             patch.object(RetireJSTool, "get_binary_path", return_value=Path("/opt/tools/retire")), \
+             patch.object(
+                 RetireJSTool,
+                 "_download_js",
+                 new=AsyncMock(return_value=b"/*! jQuery v1.6.2 */"),
+             ):
             tool = RetireJSTool()
             result = await tool.run("https://authorized.example.com/js/jquery-1.6.2.min.js", {})
 

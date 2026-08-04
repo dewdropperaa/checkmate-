@@ -51,10 +51,12 @@ def build_coverage_section(report: dict[str, Any]) -> dict[str, Any]:
         "disclaimer": SCAN_COVERAGE_DISCLAIMER,
         "modules_run": modules_run,
         "modules_failed": list(coverage.get("modules_failed") or []),
+        "modules_failed_detail": dict(coverage.get("modules_failed_detail") or {}),
         "modules_skipped": list(coverage.get("modules_skipped") or []),
         "modules_not_applicable": list(coverage.get("modules_not_applicable") or []),
         "modules_rejected": list(coverage.get("modules_rejected") or []),
         "coverage_notes": list(coverage.get("coverage_notes") or []),
+        "owasp_top10": dict(coverage.get("owasp_top10") or {}),
         "score_basis": coverage.get("score_basis"),
         "authenticated_scanning": coverage.get("authenticated_scanning") or {},
         "recon_partial_failure": bool(coverage.get("recon_partial_failure")),
@@ -74,9 +76,25 @@ def _coverage_markdown(report: dict[str, Any]) -> list[str]:
         "",
         f"- **Modules run successfully:** {_format_module_list(cov['modules_run'])}",
         f"- **Modules failed:** {_format_module_list(cov['modules_failed'])}",
+    ]
+    detail = cov.get("modules_failed_detail") or {}
+    if detail:
+        for name, err in sorted(detail.items()):
+            lines.append(f"  - `{name}`: {err}")
+    lines.extend([
         f"- **Modules skipped:** {_format_module_list(cov['modules_skipped'])}",
         f"- **Modules not applicable:** {_format_module_list(cov['modules_not_applicable'])}",
-    ]
+    ])
+    owasp = cov.get("owasp_top10") or {}
+    if owasp.get("categories_covered"):
+        labels = owasp.get("labels") or {}
+        covered = ", ".join(
+            f"`{cid}` {labels.get(cid, '')}".strip()
+            for cid in owasp["categories_covered"]
+        )
+        lines.append(f"- **OWASP Top 10 categories exercised:** {covered}")
+        if owasp.get("note"):
+            lines.append(f"- **OWASP note:** {_md_escape(str(owasp['note']))}")
     if cov["modules_rejected"]:
         lines.append(
             f"- **Active modules rejected:** {_format_module_list(cov['modules_rejected'])}"

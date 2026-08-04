@@ -172,3 +172,89 @@ class TestScanTargetIngress:
             json={"target": "https://example.com", "confirmed_authorized": True},
         )
         assert response.status_code == 202
+
+
+class TestSSRFTransportStreamPinning:
+    """Regression: IP-pinning must preserve request.stream type for AsyncHTTPTransport.
+
+    Using content=request.stream wrapped the body in IteratorByteStream, which
+    AsyncHTTPTransport rejects with AssertionError — blank header-checks failures.
+    """
+
+    @pytest.mark.asyncio
+    async def test_pin_preserves_stream_type_for_head(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        public = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
+        monkeypatch.setattr("core.ssrf.socket.getaddrinfo", lambda *a, **k: public)
+
+        seen_streams: list[type] = []
+
+        class _Inner(httpx.AsyncBaseTransport):
+            async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+                seen_streams.append(type(request.stream))
+                # AsyncHTTPTransport asserts AsyncByteStream; IteratorByteStream
+                # (from the content= wrapping bug) fails that check.
+                assert "IteratorByteStream" not in type(request.stream).__name__
+                # Provide an unconsumed stream so SSRFValidationTransport can
+                # aiter_raw() without StreamConsumed.
+                return httpx.Response(
+                    200,
+                    request=request,
+                    stream=httpx.ByteStream(b""),
+                )
+
+        transport = SSRFValidationTransport(inner=_Inner(), verify=False)
+        async with httpx.AsyncClient(transport=transport, follow_redirects=False) as client:
+            response = await client.head("https://example.com/")
+        assert response.status_code == 200
+        assert seen_streams, "inner transport was not invoked"
+        # Must not be IteratorByteStream (the content= wrapping bug).
+        for stream_type in seen_streams:
+            assert "IteratorByteStream" not in stream_type.__name__
+
+    @pytest.mark.asyncio
+    async def test_pin_connects_to_validated_ip_not_hostname(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        public_ip = "93.184.216.34"
+        public = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (public_ip, 0))]
+        monkeypatch.setattr("core.ssrf.socket.getaddrinfo", lambda *a, **k: public)
+        connected: list[str] = []
+
+        class _Inner(httpx.AsyncBaseTransport):
+            async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+                connected.append(str(request.url))
+                assert request.headers.get("host") == "example.com"
+                return httpx.Response(
+                    200,
+                    request=request,
+                    stream=httpx.ByteStream(b"ok"),
+                )
+
+        transport = SSRFValidationTransport(inner=_Inner(), verify=False)
+        async with httpx.AsyncClient(transport=transport, follow_redirects=False) as client:
+            await client.get("https://example.com/path")
+        assert connected == [f"https://{public_ip}/path"]
+
+    @pytest.mark.asyncio
+    async def test_pin_sets_sni_hostname_to_original_host(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """IP-pinned HTTPS must keep hostname SNI or TLS handshakes fail."""
+        public_ip = "93.184.216.34"
+        public = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (public_ip, 0))]
+        monkeypatch.setattr("core.ssrf.socket.getaddrinfo", lambda *a, **k: public)
+        seen_sni: list[str | None] = []
+
+        class _Inner(httpx.AsyncBaseTransport):
+            async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+                seen_sni.append(request.extensions.get("sni_hostname"))
+                return httpx.Response(
+                    200,
+                    request=request,
+                    stream=httpx.ByteStream(b"ok"),
+                )
+
+        transport = SSRFValidationTransport(inner=_Inner(), verify=False)
+        async with httpx.AsyncClient(transport=transport, follow_redirects=False) as client:
+            await client.get("https://example.com/")
+        assert seen_sni == ["example.com"]

@@ -6,13 +6,17 @@ It checks against a vulnerability database maintained by the project.
 Security considerations:
 - Passive scanner - analyzes JS files from recon crawl
 - Scope re-validated before each run
+- Remote URLs are fetched via the SSRF-safe client into a temp file, then
+  scanned with ``--path`` (retire 5.x removed ``--jsuri``)
 - Uses JSON output for reliable parsing
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import tempfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -20,6 +24,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field, field_validator
 
 from core.scope import is_target_authorized
+from core.ssrf import SSRFError, create_safe_async_client, validate_url
 from tools.base import (
     BaseSecurityTool,
     ToolResult,
@@ -37,6 +42,9 @@ RETIREJS_SEVERITY_MAP = {
     "high": Severity.HIGH,
     "critical": Severity.CRITICAL,
 }
+
+# Cap individual JS downloads so a huge asset cannot fill the disk.
+_MAX_JS_BYTES = 5 * 1024 * 1024
 
 
 class RetireJSInput(BaseModel):
@@ -76,6 +84,70 @@ class RetireJSTool(BaseSecurityTool):
     def __init__(self, timeout: float | None = None):
         super().__init__(timeout=timeout or 180.0)
 
+    async def _download_js(self, js_url: str) -> bytes:
+        """Fetch a JS URL through the SSRF-safe client."""
+        validate_url(js_url, resolve_dns=True)
+        async with create_safe_async_client(
+            timeout=min(self.timeout, 60.0),
+            verify=False,
+            max_response_bytes=_MAX_JS_BYTES,
+        ) as client:
+            response = await client.get(js_url)
+            response.raise_for_status()
+            return response.content
+
+    async def _scan_js_url(
+        self,
+        js_url: str,
+        *,
+        binary_path: Path,
+    ) -> tuple[list[Finding], str | None]:
+        """Download one JS URL and run retire --path against a temp copy.
+
+        Returns (findings, error_detail). error_detail is None on success.
+        """
+        try:
+            content = await self._download_js(js_url)
+        except SSRFError as exc:
+            return [], f"{js_url}: ssrf blocked: {exc}"
+        except Exception as exc:
+            detail = str(exc).strip() or repr(exc)
+            return [], f"{js_url}: download failed: {type(exc).__name__}: {detail}"
+
+        if not content:
+            return [], f"{js_url}: empty response body"
+
+        digest = hashlib.sha256(js_url.encode("utf-8")).hexdigest()[:16]
+        with tempfile.TemporaryDirectory(prefix="retirejs-") as tmp:
+            js_path = Path(tmp) / f"{digest}.js"
+            js_path.write_bytes(content)
+
+            args = [
+                "--path",
+                str(js_path),
+                "--outputformat",
+                "json",
+            ]
+            logger.info("Running retire.js against %s (local path scan)", js_url)
+            exit_code, stdout, stderr, timed_out = await run_subprocess_safely(
+                binary_path=binary_path,
+                args=args,
+                timeout=self.timeout,
+            )
+
+            if timed_out:
+                return [], f"{js_url}: timed out"
+
+            # retire.js: 0 = clean, 13 = vulnerabilities found. Anything else is failure.
+            if exit_code not in (0, 13):
+                err_tail = (stderr or stdout or "").strip().replace("\n", " ")[:200]
+                detail = f"{js_url}: exit {exit_code}"
+                if err_tail:
+                    detail = f"{detail}: {err_tail}"
+                return [], detail
+
+            return self._parse_findings(stdout, js_url), None
+
     async def run(self, target: str, scope: dict[str, Any]) -> ToolResult:
         """
         Run retire.js against a JavaScript URL.
@@ -92,53 +164,19 @@ class RetireJSTool(BaseSecurityTool):
         validate_scope(host)
 
         binary_path = self.get_binary_path()
+        findings, error = await self._scan_js_url(target, binary_path=binary_path)
 
-        args = [
-            "--jsuri", target,
-            "--outputformat", "json",
-        ]
-
-        logger.info(f"Running retire.js against {target}")
-
-        exit_code, stdout, stderr, timed_out = await run_subprocess_safely(
-            binary_path=binary_path,
-            args=args,
-            timeout=self.timeout,
-        )
-
-        if timed_out:
+        if error:
             return ToolResult(
                 tool_name=self.name,
                 target=target,
                 success=False,
-                error=f"retire.js timed out after {self.timeout}s",
-                stdout=stdout,
-                stderr=stderr,
-                exit_code=exit_code,
-                timed_out=True,
-            )
-
-        findings = self._parse_findings(stdout, target)
-
-        # retire.js: 0 = clean, 13 = vulnerabilities found. Anything else is failure.
-        if exit_code not in (0, 13):
-            return ToolResult(
-                tool_name=self.name,
-                target=target,
-                success=False,
-                error=(
-                    f"retire.js exited with code {exit_code}"
-                    + (f": {stderr.strip()}" if stderr.strip() else "")
-                ),
+                error=error if error.startswith("retire.js") else f"retire.js failed: {error}",
                 data={
                     "findings": [f.model_dump_for_state() for f in findings],
                     "finding_count": len(findings),
                     "js_url": target,
                 },
-                stdout=stdout,
-                stderr=stderr,
-                exit_code=exit_code,
-                timed_out=False,
             )
 
         return ToolResult(
@@ -150,10 +188,6 @@ class RetireJSTool(BaseSecurityTool):
                 "finding_count": len(findings),
                 "js_url": target,
             },
-            stdout=stdout,
-            stderr=stderr,
-            exit_code=exit_code,
-            timed_out=False,
         )
 
     async def run_batch(
@@ -191,28 +225,11 @@ class RetireJSTool(BaseSecurityTool):
         urls_scanned = 0
 
         for js_url in js_urls:
-            args = [
-                "--jsuri", js_url,
-                "--outputformat", "json",
-            ]
-
-            logger.info(f"Running retire.js against {js_url}")
-
-            exit_code, stdout, stderr, timed_out = await run_subprocess_safely(
-                binary_path=binary_path,
-                args=args,
-                timeout=self.timeout,
-            )
-
-            if timed_out:
-                child_failures.append(f"{js_url}: timed out")
+            findings, error = await self._scan_js_url(js_url, binary_path=binary_path)
+            if error:
+                child_failures.append(error)
+                logger.warning("retire.js failed for %s: %s", js_url, error)
                 continue
-
-            if exit_code not in (0, 13):
-                child_failures.append(f"{js_url}: exit {exit_code}")
-                continue
-
-            findings = self._parse_findings(stdout, js_url)
             all_findings.extend(findings)
             urls_scanned += 1
 
@@ -305,7 +322,7 @@ class RetireJSTool(BaseSecurityTool):
                     finding = Finding(
                         tool="retire.js",
                         type=f"vulnerable-js-{component}",
-                        url=file_path if file_path.startswith("http") else js_url,
+                        url=file_path if str(file_path).startswith("http") else js_url,
                         severity=severity,
                         description=f"{component} {version}: {info_text}",
                         evidence=f"CVE: {cve_str}" if cve_str else f"Version: {version}",

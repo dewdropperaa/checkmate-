@@ -171,8 +171,28 @@ class Settings(BaseSettings):
         description="Maximum concurrent nuclei template executions",
     )
     nuclei_timeout: float = Field(
-        default=300.0,
-        description="Timeout for nuclei execution",
+        default=600.0,
+        description="Timeout for nuclei execution (batch uses this directly)",
+    )
+    nuclei_enable_dast: bool = Field(
+        default=True,
+        description=(
+            "Enable nuclei -dast so XSS/SQLi/SSRF fuzzing templates run "
+            "(needed for OWASP A03/A10 coverage on the passive path)."
+        ),
+    )
+    nuclei_template_tags: str = Field(
+        default="",
+        description=(
+            "Optional comma-separated nuclei -tags filter. Empty = full template "
+            "set (recommended for OWASP breadth). Example: xss,sqli,ssrf,cve,misconfig"
+        ),
+    )
+    nuclei_severity_filter: str = Field(
+        default="",
+        description=(
+            "Optional comma-separated nuclei -severity filter. Empty = all severities."
+        ),
     )
 
     # testssl.sh settings

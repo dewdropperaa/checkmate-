@@ -66,13 +66,17 @@ async def run_with_retries(
             raise
         except Exception as exc:
             last_error = exc
-            retryable = is_retryable_error(str(exc))
+            # AssertionError and some stdlib errors stringify to "" — always
+            # include the type so logs/coverage stay actionable.
+            exc_label = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+            retryable = is_retryable_error(str(exc)) or is_retryable_error(exc_label)
             if attempt >= attempts or not retryable:
                 logger.error(
                     "%s failed after %s attempt(s): %s",
                     tool_name,
                     attempt,
-                    exc,
+                    exc_label,
+                    exc_info=True,
                 )
                 raise
             delay = backoff * (2 ** (attempt - 1))
@@ -81,7 +85,7 @@ async def run_with_retries(
                 tool_name,
                 attempt,
                 attempts,
-                exc,
+                exc_label,
                 delay,
             )
             await asyncio.sleep(delay)

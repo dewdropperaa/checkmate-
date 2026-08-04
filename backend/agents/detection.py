@@ -3,14 +3,14 @@
 This agent orchestrates passive and active security scanning tools:
 
 Passive tools (run automatically after recon):
-- nuclei: Template-based vulnerability scanner
+- nuclei: Template-based scanner with -dast (XSS/SQLi/SSRF + CVE/misconfig)
 - testssl.sh: TLS/SSL configuration checker
 - retire.js: JavaScript dependency CVE scanner
 - header-checks: HTTP security header analyzer
 
-Active tools (require per-tool human approval):
-- zap: OWASP ZAP active scanner
-- sqlmap: SQL injection scanner
+Active tools (require per-tool human approval — needed for deep injection):
+- zap: OWASP ZAP active scanner (XSS, SQLi, and more; AJAX spider enabled)
+- sqlmap: SQL injection scanner (level/risk 2 when approved)
 
 Each active tool only runs if it's individually present in
 ScanState.approved_tools; a reviewer may approve sqlmap while rejecting zap
@@ -158,9 +158,12 @@ async def run_passive_tools(state: ScanState) -> tuple[list[Finding], dict[str, 
 
     tasks = []
 
+    # DAST enables XSS/SQLi/SSRF fuzzing templates (OWASP A03/A10). Full
+    # community set stays on unless NUCLEI_TEMPLATE_TAGS narrows it.
+    nuclei_scope: dict[str, Any] = {"dast": True}
     tasks.append(run_tool_safely(
         "nuclei",
-        lambda: nuclei.run_batch(scan_urls[:50], {}),
+        lambda: nuclei.run_batch(scan_urls[:50], nuclei_scope),
     ))
 
     if https_hosts:
@@ -290,6 +293,8 @@ async def run_active_tools(
             zap_scope: dict[str, Any] = {
                 "excluded_paths": excluded,
                 "scan_id": state.get("scan_id"),
+                # AJAX spider improves SPA coverage before active XSS/SQLi tests.
+                "ajax_spider": True,
             }
             if runtime.meta.enabled and runtime.credentials is not None:
                 # Ephemeral auth dict for this tool call only — not persisted.
@@ -325,7 +330,8 @@ async def run_active_tools(
             logger.info(f"Found {len(injectable_urls)} URLs for SQLMap testing")
             tasks.append(run_tool_safely(
                 "sqlmap",
-                lambda: sqlmap.run_batch(injectable_urls[:10], {"level": 1, "risk": 1}),
+                # Cap is MAX_LEVEL/MAX_RISK=2 — use full allowed depth for SQLi.
+                lambda: sqlmap.run_batch(injectable_urls[:10], {"level": 2, "risk": 2}),
             ))
         else:
             logger.info("sqlmap: not applicable (no parameterized URLs discovered)")

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from agents.state import ScanState
+from core.owasp import coverage_for_modules
 
 _SEVERITY_ORDER = {
     "info": 0,
@@ -214,6 +215,17 @@ def run_scoring(state: ScanState) -> dict[str, Any]:
             modules_failed_all.append(tool)
     modules_failed_all = sorted(set(modules_failed_all))
 
+    # Preserve the actual error text next to failed module names so operators
+    # (and future debugging) are not stuck with names-only coverage reports.
+    modules_failed_detail: dict[str, str] = {}
+    for tool, err in detection_errors.items():
+        name = tool.removeprefix("active_") if tool.startswith("active_") else tool
+        if name in modules_failed_all and err:
+            modules_failed_detail[name] = str(err)[:500]
+    for tool, err in (recon.get("errors") or {}).items():
+        if tool in modules_failed_all and err and tool not in modules_failed_detail:
+            modules_failed_detail[tool] = str(err)[:500]
+
     total_findings = len(findings)
     if total_findings == 0:
         overall_risk = 0.0
@@ -228,20 +240,29 @@ def run_scoring(state: ScanState) -> dict[str, Any]:
         overall_risk = round(max(overall_risk, coverage_penalty), 2)
 
     rejected_active = list(detection_meta.get("rejected_tools") or [])
+    modules_run_for_owasp = [
+        m
+        for m in list(dict.fromkeys(recon_modules + detection_modules))
+        if m not in modules_failed_all
+    ]
     scan_coverage = {
         "recon_modules_run": recon_modules,
         "detection_modules_run": detection_modules,
         "recon_partial_failure": bool(recon.get("partial_failure")),
         "modules_failed": modules_failed_all,
+        "modules_failed_detail": modules_failed_detail,
         "modules_not_applicable": sorted(modules_na),
         "modules_skipped": sorted(set(recon_skipped + rejected_active)),
         "modules_rejected": rejected_active,
+        "owasp_top10": coverage_for_modules(modules_run_for_owasp),
         "score_basis": (
             "Score reflects findings from modules that executed successfully. "
             "modules_not_applicable lists tools that had nothing to scan; "
             "modules_failed lists tools that exhausted retries; "
             "modules_skipped lists intentionally disabled/skipped tools "
-            "(e.g. Firecrawl off, reviewer-rejected active tools)."
+            "(e.g. Firecrawl off, reviewer-rejected active tools). "
+            "Injection (XSS/SQLi) depth requires approved ZAP and/or sqlmap; "
+            "nuclei -dast covers template-based XSS/SQLi/SSRF on the passive path."
         ),
     }
 

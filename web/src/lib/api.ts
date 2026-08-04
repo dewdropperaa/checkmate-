@@ -157,10 +157,19 @@ export type ScanCoverage = {
   disclaimer: string;
   modules_run: string[];
   modules_failed: string[];
+  modules_failed_detail?: Record<string, string>;
   modules_skipped: string[];
   modules_not_applicable: string[];
   modules_rejected: string[];
   coverage_notes: string[];
+  owasp_top10?: {
+    standard?: string;
+    categories_covered?: string[];
+    categories_not_covered?: string[];
+    not_automatable?: string[];
+    labels?: Record<string, string>;
+    note?: string;
+  };
   score_basis?: string | null;
   authenticated_scanning?: Record<string, unknown>;
   recon_partial_failure?: boolean;

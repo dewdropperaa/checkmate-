@@ -95,6 +95,11 @@ class TestRetireAndSqlmapBatchFailures:
             AsyncMock(return_value=(-1, "", "", True)),
         )
         monkeypatch.setattr("tools.retirejs_tool.validate_scope", lambda *_a, **_k: None)
+        monkeypatch.setattr(
+            tool,
+            "_download_js",
+            AsyncMock(return_value=b"console.log(1)"),
+        )
         result = await tool.run_batch(
             ["https://authorized.example.com/a.js", "https://authorized.example.com/b.js"],
             {},

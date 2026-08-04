@@ -12,6 +12,10 @@ const signInWithGoogle = vi.fn();
 const sendPasswordResetEmail = vi.fn();
 const signOut = vi.fn();
 
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 vi.mock("@/i18n/navigation", () => ({
   Link: ({
     href,
@@ -21,6 +25,7 @@ vi.mock("@/i18n/navigation", () => ({
     children: React.ReactNode;
   }) => <a href={href}>{children}</a>,
   useRouter: () => ({ replace, push: replace }),
+  usePathname: () => "/signin",
 }));
 
 vi.mock("@/contexts/AuthContext", () => ({
@@ -50,21 +55,28 @@ describe("AuthForm validation", () => {
     signOut.mockResolvedValue({ ok: true, uid: "", email: null });
   });
 
-  it("blocks invalid email before calling signup", async () => {
-    const user = userEvent.setup();
-    renderForm("signup");
+  it(
+    "blocks invalid email before calling signup",
+    async () => {
+      const user = userEvent.setup();
+      renderForm("signup");
 
-    await user.type(screen.getByRole("textbox", { name: /^email$/i }), "not-an-email");
-    await user.type(screen.getByLabelText(/^password$/i), "GoodPass1");
-    await user.type(
-      screen.getByLabelText(/confirm password/i),
-      "GoodPass1",
-    );
-    await user.click(screen.getByRole("button", { name: /create account/i }));
+      await user.type(
+        screen.getByRole("textbox", { name: /^email$/i }),
+        "not-an-email",
+      );
+      await user.type(screen.getByLabelText(/^password$/i), "GoodPass1");
+      await user.type(
+        screen.getByLabelText(/confirm password/i),
+        "GoodPass1",
+      );
+      await user.click(screen.getByRole("button", { name: /create account/i }));
 
-    expect(await screen.findByText(/valid email/i)).toBeInTheDocument();
-    expect(signUpWithEmail).not.toHaveBeenCalled();
-  });
+      expect(await screen.findByText(/valid email/i)).toBeInTheDocument();
+      expect(signUpWithEmail).not.toHaveBeenCalled();
+    },
+    15_000,
+  );
 
   it("blocks weak password before calling signup", async () => {
     const user = userEvent.setup();

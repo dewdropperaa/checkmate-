@@ -1,14 +1,14 @@
 """Nuclei vulnerability scanner CLI wrapper.
 
-Nuclei is a passive scanner that uses YAML-based templates to detect
-vulnerabilities. This wrapper runs nuclei against discovered hosts/URLs
-from recon, using the community template set.
+Nuclei uses YAML-based templates to detect vulnerabilities. With -dast enabled
+it also runs fuzzing templates for XSS, SQLi, SSRF, and related OWASP A03/A10
+checks against discovered hosts/URLs from recon.
 
 Security considerations:
 - Rate-limited to avoid hammering targets
 - Concurrency capped
 - Scope re-validated before each run
-- Uses JSON output for reliable parsing
+- Uses JSONL output for reliable parsing
 """
 
 from __future__ import annotations
@@ -19,10 +19,10 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 from core.config import get_settings
+from core.owasp import classify_finding_owasp
 from core.scope import is_target_authorized
 from tools.base import (
     BaseSecurityTool,
-    ScopeViolationError,
     ToolResult,
     parse_json_output,
     run_subprocess_safely,
@@ -61,6 +61,14 @@ NUCLEI_CWE_MAP = {
 }
 
 
+def _split_csv(value: str | list[str] | None) -> list[str]:
+    if not value:
+        return []
+    if isinstance(value, list):
+        return [str(v).strip() for v in value if str(v).strip()]
+    return [part.strip() for part in str(value).split(",") if part.strip()]
+
+
 class NucleiInput(BaseModel):
     """Input schema for Nuclei tool with validation."""
 
@@ -71,23 +79,11 @@ class NucleiInput(BaseModel):
     )
     template_tags: list[str] | None = Field(
         default=None,
-        description="Template tags to filter (e.g., ['cve', 'misconfig'])",
+        description="Template tags to filter (e.g., ['xss', 'sqli'])",
     )
     severity_filter: list[str] | None = Field(
         default=None,
         description="Severity levels to scan for (e.g., ['high', 'critical'])",
-    )
-    rate_limit: int = Field(
-        default=50,
-        ge=1,
-        le=150,
-        description="Maximum requests per second",
-    )
-    concurrency: int = Field(
-        default=10,
-        ge=1,
-        le=50,
-        description="Maximum concurrent template executions",
     )
 
     @field_validator("targets")
@@ -115,49 +111,61 @@ class NucleiTool(BaseSecurityTool):
     description = "Fast template-based vulnerability scanner"
 
     def __init__(self, timeout: float | None = None):
-        super().__init__(timeout=timeout)
         settings = get_settings()
-        self._rate_limit = getattr(settings, "nuclei_rate_limit", 50)
-        self._concurrency = getattr(settings, "nuclei_concurrency", 10)
+        super().__init__(
+            timeout=timeout if timeout is not None else settings.nuclei_timeout
+        )
+        self._rate_limit = settings.nuclei_rate_limit
+        self._concurrency = settings.nuclei_concurrency
+        self._enable_dast = settings.nuclei_enable_dast
+        self._default_tags = _split_csv(settings.nuclei_template_tags)
+        self._default_severity = _split_csv(settings.nuclei_severity_filter)
+
+    def _build_scan_args(self, scope: dict[str, Any]) -> list[str]:
+        """Build shared nuclei CLI flags (jsonl, rate, dast, tags, severity)."""
+        rate_limit = scope.get("rate_limit", self._rate_limit)
+        concurrency = scope.get("concurrency", self._concurrency)
+        template_tags = scope.get("template_tags", self._default_tags) or []
+        if isinstance(template_tags, str):
+            template_tags = _split_csv(template_tags)
+        severity_filter = scope.get("severity_filter", self._default_severity) or []
+        if isinstance(severity_filter, str):
+            severity_filter = _split_csv(severity_filter)
+        dast = scope.get("dast", self._enable_dast)
+
+        args = [
+            # nuclei v3 removed -json; -jsonl (-j) is the JSONL stdout format.
+            "-jsonl",
+            "-silent",
+            "-rl",
+            str(rate_limit),
+            "-c",
+            str(concurrency),
+            "-nc",
+        ]
+        if dast:
+            # Enables DAST/fuzzing templates (XSS, SQLi, SSRF, etc.).
+            args.append("-dast")
+        if template_tags:
+            args.extend(["-tags", ",".join(template_tags)])
+        if severity_filter:
+            args.extend(["-severity", ",".join(severity_filter)])
+        return args
 
     async def run(self, target: str, scope: dict[str, Any]) -> ToolResult:
-        """
-        Run nuclei against a single target.
-
-        For batch scanning multiple targets, use run_batch().
-
-        Args:
-            target: URL or host to scan
-            scope: Scope metadata with optional configuration
-
-        Returns:
-            ToolResult with parsed findings
-        """
+        """Run nuclei against a single target."""
         validate_scope(target)
 
         binary_path = self.get_binary_path()
+        args = self._build_scan_args(scope)
+        args.extend(["-u", target])
 
-        rate_limit = scope.get("rate_limit", self._rate_limit)
-        concurrency = scope.get("concurrency", self._concurrency)
-        template_tags = scope.get("template_tags", [])
-        severity_filter = scope.get("severity_filter", [])
-
-        args = [
-            "-u", target,
-            "-json",
-            "-silent",
-            "-rl", str(rate_limit),
-            "-c", str(concurrency),
-            "-nc",
-        ]
-
-        if template_tags:
-            args.extend(["-tags", ",".join(template_tags)])
-
-        if severity_filter:
-            args.extend(["-severity", ",".join(severity_filter)])
-
-        logger.info(f"Running nuclei against {target} with rate_limit={rate_limit}")
+        logger.info(
+            "Running nuclei against %s (dast=%s, tags=%s)",
+            target,
+            "-dast" in args,
+            scope.get("template_tags") or self._default_tags or "all",
+        )
 
         exit_code, stdout, stderr, timed_out = await run_subprocess_safely(
             binary_path=binary_path,
@@ -181,13 +189,14 @@ class NucleiTool(BaseSecurityTool):
         findings = self._parse_findings(raw_results, target)
 
         if exit_code != 0:
+            detail = (stderr or stdout or "").strip()
             return ToolResult(
                 tool_name=self.name,
                 target=target,
                 success=False,
                 error=(
                     f"Nuclei exited with code {exit_code}"
-                    + (f": {stderr.strip()}" if stderr.strip() else "")
+                    + (f": {detail[:500]}" if detail else "")
                 ),
                 data={
                     "findings": [f.model_dump_for_state() for f in findings],
@@ -200,14 +209,17 @@ class NucleiTool(BaseSecurityTool):
                 timed_out=False,
             )
 
-        # Non-empty stdout that yielded zero parseable records is malformed output.
         if stdout.strip() and not raw_results and not findings:
             return ToolResult(
                 tool_name=self.name,
                 target=target,
                 success=False,
                 error="Nuclei produced non-empty output that could not be parsed as JSON",
-                data={"findings": [], "finding_count": 0, "raw_count": 0},
+                data={
+                    "findings": [],
+                    "finding_count": 0,
+                    "raw_count": 0,
+                },
                 stdout=stdout,
                 stderr=stderr,
                 exit_code=exit_code,
@@ -234,18 +246,7 @@ class NucleiTool(BaseSecurityTool):
         targets: list[str],
         scope: dict[str, Any],
     ) -> ToolResult:
-        """
-        Run nuclei against multiple targets.
-
-        Uses nuclei's native list input for efficiency.
-
-        Args:
-            targets: List of URLs or hosts to scan
-            scope: Scope metadata with optional configuration
-
-        Returns:
-            ToolResult with aggregated findings
-        """
+        """Run nuclei against multiple targets (honors dast/tags/severity scope)."""
         for target in targets:
             validate_scope(target)
 
@@ -258,27 +259,21 @@ class NucleiTool(BaseSecurityTool):
             )
 
         binary_path = self.get_binary_path()
-
-        rate_limit = scope.get("rate_limit", self._rate_limit)
-        concurrency = scope.get("concurrency", self._concurrency)
-
-        args = [
-            "-json",
-            "-silent",
-            "-rl", str(rate_limit),
-            "-c", str(concurrency),
-            "-nc",
-        ]
-
+        args = self._build_scan_args(scope)
         for target in targets:
             args.extend(["-u", target])
 
-        logger.info(f"Running nuclei batch scan against {len(targets)} targets")
+        logger.info(
+            "Running nuclei batch against %s targets (dast=%s, tags=%s)",
+            len(targets),
+            "-dast" in args,
+            scope.get("template_tags") or self._default_tags or "all",
+        )
 
         exit_code, stdout, stderr, timed_out = await run_subprocess_safely(
             binary_path=binary_path,
             args=args,
-            timeout=self.timeout * 2,
+            timeout=self.timeout,
         )
 
         if timed_out:
@@ -286,7 +281,7 @@ class NucleiTool(BaseSecurityTool):
                 tool_name=self.name,
                 target="batch",
                 success=False,
-                error=f"Nuclei batch scan timed out",
+                error=f"Nuclei batch scan timed out after {self.timeout}s",
                 timed_out=True,
             )
 
@@ -297,13 +292,14 @@ class NucleiTool(BaseSecurityTool):
             findings.extend(self._parse_findings([result], matched_at))
 
         if exit_code != 0:
+            detail = (stderr or stdout or "").strip()
             return ToolResult(
                 tool_name=self.name,
                 target="batch",
                 success=False,
                 error=(
                     f"Nuclei batch exited with code {exit_code}"
-                    + (f": {stderr.strip()}" if stderr.strip() else "")
+                    + (f": {detail[:500]}" if detail else "")
                 ),
                 data={
                     "findings": [f.model_dump_for_state() for f in findings],
@@ -368,34 +364,61 @@ class NucleiTool(BaseSecurityTool):
                 extracted = result.get("extracted-results", [])
 
                 template_tags = template_info.get("tags", [])
-                cwe_id = None
+                if isinstance(template_tags, str):
+                    template_tags = [template_tags]
+                cwe_id: int | None = None
                 for tag in template_tags:
-                    if tag in NUCLEI_CWE_MAP:
+                    if tag in NUCLEI_CWE_MAP and NUCLEI_CWE_MAP[tag] is not None:
                         cwe_id = NUCLEI_CWE_MAP[tag]
                         break
 
-                cwe_from_classification = template_info.get("classification", {}).get("cwe-id")
+                cwe_from_classification = template_info.get("classification", {}).get(
+                    "cwe-id"
+                )
                 if cwe_from_classification:
-                    if isinstance(cwe_from_classification, list):
-                        cwe_id = cwe_from_classification[0] if cwe_from_classification else cwe_id
-                    else:
-                        cwe_id = cwe_from_classification
+                    raw_cwe = (
+                        cwe_from_classification[0]
+                        if isinstance(cwe_from_classification, list)
+                        and cwe_from_classification
+                        else cwe_from_classification
+                    )
+                    if isinstance(raw_cwe, str) and raw_cwe.upper().startswith("CWE-"):
+                        try:
+                            cwe_id = int(raw_cwe.split("-", 1)[1])
+                        except ValueError:
+                            pass
+                    elif isinstance(raw_cwe, int):
+                        cwe_id = raw_cwe
 
                 evidence_parts = []
                 if matcher_name:
                     evidence_parts.append(f"Matcher: {matcher_name}")
                 if extracted:
-                    evidence_parts.append(f"Extracted: {', '.join(str(e) for e in extracted[:3])}")
+                    evidence_parts.append(
+                        f"Extracted: {', '.join(str(e) for e in extracted[:3])}"
+                    )
+
+                owasp_id = classify_finding_owasp(
+                    finding_type=template_id,
+                    tool="nuclei",
+                    tags=[str(t) for t in template_tags],
+                    cwe_id=cwe_id,
+                )
+                raw = dict(result)
+                if owasp_id:
+                    raw["owasp"] = owasp_id
 
                 finding = Finding(
                     tool="nuclei",
                     type=template_id,
                     url=matched_at,
                     severity=severity,
-                    description=template_info.get("description", template_info.get("name", template_id)),
+                    description=template_info.get(
+                        "description", template_info.get("name", template_id)
+                    ),
                     evidence="; ".join(evidence_parts) if evidence_parts else None,
                     cwe_id=cwe_id,
-                    raw_data=result,
+                    raw_data=raw,
                 )
                 findings.append(finding)
 

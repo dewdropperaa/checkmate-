@@ -263,7 +263,10 @@ class ZAPTool:
             await self._api_call("/JSON/core/view/version/")
             return True, None
         except Exception as exc:
-            return False, f"ZAP unreachable: {exc}"
+            detail = str(exc).strip() or repr(exc)
+            msg = f"ZAP unreachable: {type(exc).__name__}: {detail}"
+            logger.warning("ZAP readiness probe failed: %s", msg, exc_info=True)
+            return False, msg
 
     def _emit(self, event: str, *, scan_id: str | None = None, **fields: Any) -> None:
         sid = scan_id or fields.pop("correlation_id", None) or "zap"

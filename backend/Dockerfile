@@ -15,7 +15,9 @@ RUN go install -v github.com/projectdiscovery/katana/cmd/katana@latest
 RUN go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
 
 # Stage 2: Node tools (retire.js)
-FROM node:20-alpine AS node-builder
+# Use Debian-based Node so the binary is glibc-compatible with python:*-slim.
+# Alpine (musl) node cannot be copied into the final slim image.
+FROM node:20-bookworm-slim AS node-builder
 
 RUN npm install -g retire@latest
 
@@ -28,10 +30,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
+# bash/openssl/hexdump: required by testssl.sh (hexdump missing → exit 244).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     git \
+    bash \
+    openssl \
+    bsdextrautils \
   && rm -rf /var/lib/apt/lists/*
 
 # Copy Go binaries from builder stage
@@ -40,7 +46,10 @@ COPY --from=tools-builder /go/bin/httpx /opt/tools/httpx
 COPY --from=tools-builder /go/bin/katana /opt/tools/katana
 COPY --from=tools-builder /go/bin/nuclei /opt/tools/nuclei
 
-# Copy retire.js from node stage
+# retire.js is a Node script — copy the node runtime + global module, not just
+# the shim. Without node, every retirejs invocation exits 1.
+COPY --from=node-builder /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-builder /usr/local/lib/node_modules/retire /usr/local/lib/node_modules/retire
 COPY --from=node-builder /usr/local/bin/retire /opt/tools/retire
 
 # Install testssl.sh and sqlmap
@@ -51,12 +60,15 @@ RUN git clone --depth 1 https://github.com/drwetter/testssl.sh.git /opt/testssl 
 # Pre-fetch nuclei templates so first scan is not empty
 RUN /opt/tools/nuclei -update-templates -silent || true
 
-# Make tools executable and verify core binaries
+# Make tools executable and verify core binaries (incl. retire + testssl deps)
 RUN chmod +x /opt/tools/* /opt/testssl/testssl.sh && \
     /opt/tools/subfinder -version && \
     /opt/tools/httpx -version && \
     /opt/tools/katana -version && \
-    /opt/tools/nuclei -version
+    /opt/tools/nuclei -version && \
+    command -v hexdump && \
+    /opt/tools/retire --help >/dev/null && \
+    head -n1 /opt/tools/testssl.sh | grep -q bash
 
 COPY requirements.txt .
 RUN pip install -r requirements.txt

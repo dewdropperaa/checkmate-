@@ -255,6 +255,21 @@ class HeaderChecker:
                 success=False,
                 error=f"Request failed: {str(e)}",
             )
+        except Exception as e:
+            # Preserve type name: bare AssertionError (and similar) stringify to "".
+            logger.exception(
+                "header-checks unexpected failure for %s: %s: %s",
+                origin,
+                type(e).__name__,
+                e,
+            )
+            detail = str(e).strip() or repr(e)
+            return ToolResult(
+                tool_name=self.name,
+                target=origin,
+                success=False,
+                error=f"{type(e).__name__}: {detail}",
+            )
 
     async def run_batch(
         self,
@@ -299,21 +314,45 @@ class HeaderChecker:
                         all_findings.append(finding)
                 elif result.error:
                     errors[origin] = result.error
+                    logger.warning(
+                        "header-checks origin failed %s: %s",
+                        origin,
+                        result.error,
+                    )
+                elif not result.success:
+                    errors[origin] = "unknown failure (no error message)"
+                    logger.warning(
+                        "header-checks origin failed %s with empty error",
+                        origin,
+                    )
             except Exception as e:
-                errors[origin] = str(e)
+                detail = str(e).strip() or repr(e)
+                errors[origin] = f"{type(e).__name__}: {detail}"
+                logger.exception(
+                    "header-checks origin raised for %s: %s",
+                    origin,
+                    errors[origin],
+                )
 
             await asyncio.sleep(self.rate_limit_delay)
 
         all_origins_failed = bool(origin_groups) and len(errors) == len(origin_groups)
+        if all_origins_failed:
+            # Promote per-origin causes into the top-level error so coverage /
+            # detection_metadata.errors is not just "All N origin checks failed".
+            sample = "; ".join(
+                f"{origin}: {err}" for origin, err in list(errors.items())[:5]
+            )
+            aggregate_error = (
+                f"All {len(origin_groups)} origin checks failed: {sample}"
+            )
+        else:
+            aggregate_error = None
         return ToolResult(
             tool_name=self.name,
             target="batch",
             success=not all_origins_failed,
-            error=(
-                f"All {len(origin_groups)} origin checks failed"
-                if all_origins_failed
-                else None
-            ),
+            error=aggregate_error,
             data={
                 "findings": [f.model_dump_for_state() for f in all_findings],
                 "finding_count": len(all_findings),

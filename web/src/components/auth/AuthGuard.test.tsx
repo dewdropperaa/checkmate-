@@ -12,6 +12,7 @@ let authState: {
 
 vi.mock("@/i18n/navigation", () => ({
   useRouter: () => ({ replace, push: replace }),
+  usePathname: () => "/dashboard",
 }));
 
 vi.mock("@/contexts/AuthContext", () => ({

@@ -47,11 +47,28 @@ export function ScanCoverageSection({ coverage }: Props) {
           items={coverage.modules_run}
           empty={t("none")}
         />
-        <ModuleList
-          label={t("modulesFailed")}
-          items={coverage.modules_failed}
-          empty={t("none")}
-        />
+        {coverage.modules_failed_detail &&
+        Object.keys(coverage.modules_failed_detail).length > 0 ? (
+          <li>
+            <strong>{t("modulesFailed")}:</strong>
+            <ul className={styles.coverageList}>
+              {Object.entries(coverage.modules_failed_detail)
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([name, err]) => (
+                  <li key={name}>
+                    <code className={styles.moduleChip}>{name}</code>{" "}
+                    <span className={styles.muted}>{err}</span>
+                  </li>
+                ))}
+            </ul>
+          </li>
+        ) : (
+          <ModuleList
+            label={t("modulesFailed")}
+            items={coverage.modules_failed}
+            empty={t("none")}
+          />
+        )}
         <ModuleList
           label={t("modulesSkipped")}
           items={coverage.modules_skipped}
@@ -68,6 +85,23 @@ export function ScanCoverageSection({ coverage }: Props) {
             items={coverage.modules_rejected}
             empty={t("none")}
           />
+        ) : null}
+        {coverage.owasp_top10?.categories_covered &&
+        coverage.owasp_top10.categories_covered.length > 0 ? (
+          <li>
+            <strong>OWASP Top 10:</strong>{" "}
+            {coverage.owasp_top10.categories_covered.map((id) => (
+              <code key={id} className={styles.moduleChip}>
+                {id}
+                {coverage.owasp_top10?.labels?.[id]
+                  ? ` ${coverage.owasp_top10.labels[id]}`
+                  : ""}
+              </code>
+            ))}
+            {coverage.owasp_top10.note ? (
+              <p className={styles.muted}>{coverage.owasp_top10.note}</p>
+            ) : null}
+          </li>
         ) : null}
       </ul>
       <div className={styles.coverageDisclaimer} role="note">
