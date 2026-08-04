@@ -20,8 +20,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1.5rem;
-  padding: 1rem 0;
+  gap: 0.75rem;
+  padding: 0.85rem 0;
+  min-width: 0;
 }
 
 .brandLink {
@@ -33,6 +34,8 @@
   font-size: 1.1rem;
   text-decoration: none;
   letter-spacing: -0.01em;
+  flex-shrink: 0;
+  min-width: 0;
 }
 
 .brandLink:hover {
@@ -45,8 +48,12 @@
   filter: drop-shadow(0 0 8px var(--accent-a40));
 }
 
-.navLinks {
+.desktopNav {
   display: none;
+}
+
+.navLinks {
+  display: flex;
   gap: 2rem;
   list-style: none;
   margin: 0;
@@ -68,7 +75,13 @@
 .navActions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.desktopAuth {
+  display: none;
 }
 
 .langSwitch {
@@ -79,7 +92,7 @@
 }
 
 .langSwitch a {
-  padding: 0.4rem 0.65rem;
+  padding: 0.4rem 0.55rem;
   font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -99,9 +112,169 @@
   background: var(--accent-a12) !important;
 }
 
+.menuToggle {
+  display: inline-grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.menuToggle:hover {
+  border-color: var(--border-bright);
+  color: var(--accent-bright);
+}
+
+.menuToggleBars,
+.menuToggleBars::before,
+.menuToggleBars::after {
+  display: block;
+  width: 1.1rem;
+  height: 2px;
+  background: currentColor;
+  transition:
+    transform 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.menuToggleBars {
+  position: relative;
+}
+
+.menuToggleBars::before,
+.menuToggleBars::after {
+  content: "";
+  position: absolute;
+  left: 0;
+}
+
+.menuToggleBars::before {
+  top: -6px;
+}
+
+.menuToggleBars::after {
+  top: 6px;
+}
+
+.menuToggleBars[data-open="true"] {
+  background: transparent;
+}
+
+.menuToggleBars[data-open="true"]::before {
+  top: 0;
+  transform: rotate(45deg);
+}
+
+.menuToggleBars[data-open="true"]::after {
+  top: 0;
+  transform: rotate(-45deg);
+}
+
+.mobilePanel {
+  display: grid;
+  gap: 1.25rem;
+  padding: 0 0 1.15rem;
+  border-top: 1px solid var(--border);
+  animation: fadeInUp 0.25s ease-out;
+}
+
+.mobilePanel[hidden] {
+  display: none;
+}
+
+.mobileLinks {
+  list-style: none;
+  margin: 0;
+  padding: 0.85rem 0 0;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.mobileLinks a {
+  display: block;
+  padding: 0.75rem 0.15rem;
+  color: var(--fg);
+  font-size: 0.95rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.mobileLinks a:hover {
+  color: var(--accent-bright);
+}
+
+.mobileAuth {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.mobileAuth .btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.menuBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: color-mix(in srgb, var(--bg-primary) 55%, transparent);
+  cursor: pointer;
+}
+
 @media (min-width: 900px) {
-  .navLinks {
-    display: flex;
+  .navRow {
+    gap: 1.5rem;
+    padding: 1rem 0;
+  }
+
+  .desktopNav {
+    display: block;
+  }
+
+  .desktopAuth {
+    display: inline-flex;
+  }
+
+  .menuToggle,
+  .mobilePanel,
+  .menuBackdrop {
+    display: none;
+  }
+
+  .navActions {
+    gap: 0.75rem;
+  }
+
+  .langSwitch a {
+    padding: 0.4rem 0.65rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .brandLink {
+    font-size: 0.95rem;
+    gap: 0.4rem;
+  }
+
+  .brandMark {
+    width: 26px;
+    height: 26px;
+  }
+
+  .navActions {
+    gap: 0.35rem;
+  }
+
+  .langSwitch a {
+    padding: 0.35rem 0.45rem;
   }
 }
 
@@ -295,7 +468,8 @@
 
 .heroStats {
   display: flex;
-  gap: 2rem;
+  flex-wrap: wrap;
+  gap: 1.25rem 2rem;
   animation: fadeInUp 0.8s 0.5s ease-out both;
 }
 
@@ -303,6 +477,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  min-width: 0;
 }
 
 .statValue {
@@ -322,6 +497,7 @@
 .heroVisual {
   position: relative;
   animation: fadeInUp 0.8s 0.3s ease-out both;
+  max-width: 100%;
 }
 
 @media (max-width: 999px) {
@@ -344,6 +520,38 @@
   height: 80px;
   filter: drop-shadow(0 0 30px var(--accent-a50));
   animation: logoPulse 4s ease-in-out infinite;
+}
+
+@media (max-width: 700px) {
+  .hero {
+    min-height: auto;
+    padding-top: clamp(3rem, 10vw, 5rem);
+  }
+
+  .heroLogoFloat {
+    top: -12px;
+    right: 0;
+  }
+
+  .heroLogo {
+    width: 56px;
+    height: 56px;
+  }
+
+  .statValue {
+    font-size: 1.25rem;
+  }
+
+  .heroScanForm {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .heroCta,
+  .heroCtaSecondary {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -430,6 +638,8 @@
 
 .terminalLine {
   margin-bottom: 0.25rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   animation: terminalLineIn 0.3s ease-out;
 }
 

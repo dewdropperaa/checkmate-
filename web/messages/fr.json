@@ -10,7 +10,10 @@
     "faq": "FAQ",
     "signIn": "Connexion",
     "getStarted": "Essai gratuit",
-    "lang": "Langue"
+    "lang": "Langue",
+    "primary": "Principal",
+    "openMenu": "Ouvrir le menu",
+    "closeMenu": "Fermer le menu"
   },
   "hero": {
     "badge": "Scan de sécurité simplifié",

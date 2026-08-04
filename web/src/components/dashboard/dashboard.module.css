@@ -342,6 +342,7 @@
   color: var(--fg-faint);
   font-size: 0.7rem;
   white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
 }
 
 .progressStep {
@@ -358,6 +359,7 @@
   border: 1px solid var(--border-bright);
   border-radius: 50%;
   font-size: 0.65rem;
+  flex-shrink: 0;
 }
 
 .progressStep[data-state="active"] {
@@ -504,12 +506,67 @@
 
 .cornerControls {
   position: fixed;
-  bottom: 1rem;
-  left: 1rem;
+  bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  left: max(1rem, env(safe-area-inset-left, 0px));
   display: flex;
   align-items: center;
   gap: 0.5rem;
   z-index: 50;
+}
+
+@media (max-width: 900px) {
+  .header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+  }
+
+  .topActions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .stats .stat:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  .progress {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.45rem;
+    overflow: visible;
+    white-space: normal;
+  }
+
+  .progressLine {
+    display: none;
+  }
+
+  .progressStep {
+    width: 100%;
+    padding: 0.45rem 0.55rem;
+    border: 1px solid var(--border);
+    background: var(--panel-alt);
+    white-space: normal;
+  }
+
+  .progressStep[data-state="active"] {
+    border-color: var(--accent);
+    background: var(--accent-a08);
+  }
+
+  .progressStep[data-state="complete"] {
+    border-color: var(--border-bright);
+  }
+
+  .authGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
@@ -526,6 +583,10 @@
 
   .stats {
     grid-template-columns: 1fr;
+  }
+
+  .stats .stat:last-child:nth-child(odd) {
+    grid-column: auto;
   }
 
   .scanForm {
@@ -588,6 +649,23 @@
 
   .rowActions {
     justify-content: flex-end;
+  }
+
+  .reportActions {
+    flex-wrap: wrap;
+    justify-content: stretch;
+  }
+
+  .reportActions .btn,
+  .reportActions a {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .smallButton {
+    min-height: 2.25rem;
+    padding: 0.45rem 0.7rem;
+    font-size: 0.72rem;
   }
 }
 
@@ -912,10 +990,4 @@
 .muted {
   color: var(--fg-dim);
   font-size: 0.9rem;
-}
-
-@media (max-width: 640px) {
-  .authGrid {
-    grid-template-columns: 1fr;
-  }
 }

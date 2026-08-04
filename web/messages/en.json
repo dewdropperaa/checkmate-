@@ -10,7 +10,10 @@
     "faq": "FAQ",
     "signIn": "Sign In",
     "getStarted": "Start Free",
-    "lang": "Language"
+    "lang": "Language",
+    "primary": "Primary",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu"
   },
   "hero": {
     "badge": "Security scanning made simple",

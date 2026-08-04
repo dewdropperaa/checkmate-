@@ -8,6 +8,7 @@
 
 html {
   scroll-behavior: smooth;
+  overflow-x: clip;
 }
 
 body {
@@ -18,6 +19,7 @@ body {
   color: var(--fg);
   line-height: 1.55;
   position: relative;
+  overflow-x: clip;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -109,6 +111,22 @@ img {
 .container {
   width: min(100% - 2rem, var(--max-width));
   margin-inline: auto;
+}
+
+@media (max-width: 480px) {
+  .container {
+    width: min(100% - 1.25rem, var(--max-width));
+  }
+
+  .btn {
+    padding: 0.65rem 0.85rem;
+    font-size: 0.72rem;
+  }
+
+  .btn-large {
+    width: 100%;
+    padding: 0.9rem 1.25rem;
+  }
 }
 
 .section {
